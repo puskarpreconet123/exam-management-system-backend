@@ -45,56 +45,79 @@ exports.register = async (req, res) => {
 // ================= LOGIN =================
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
 
-    // 1. Generic error message for security
+    // 🛡️ Handle email sent as object
+    if (email && typeof email === "object") {
+      email = email.email;
+    }
+
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ message: "Valid email is required" });
+    }
+
     const authError = { message: "Invalid email or password" };
 
-    const user = await User.findOne({ email });
+    // 🔎 Find user
+    const user = await User.findOne({
+      email: email.toLowerCase().trim(),
+    });
+
     if (!user) return res.status(400).json(authError);
 
+    // 🔑 Check password
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json(authError);
 
-    // 🔐 Generate sessionId
+    // 🔐 Generate new sessionId
     const sessionId = crypto.randomUUID();
 
-    // 🚫 Prevent parallel login (Note: Ensure redis is connected)
-    try {
-      
-      const result = await redis.set(
-      `user_session:${user._id}`,
-      sessionId,
+    const userSessionKey = `user_session:${user._id}`;
+    const sessionKey = `session:${sessionId}`;
+
+    // ==============================
+    // 🚫 AUTO LOGOUT PREVIOUS DEVICE
+    // ==============================
+
+    // 1️⃣ Check if old session exists
+    const oldSessionId = await redis.get(userSessionKey);
+
+    if (oldSessionId) {
+      // 2️⃣ Delete old session
+      await redis.del(`session:${oldSessionId}`);
+    }
+
+    // 3️⃣ Save new session mapping (user → sessionId)
+    await redis.set(userSessionKey, sessionId, "EX", 60 * 60 * 24); // 24h
+
+    // 4️⃣ Save session data (sessionId → user info)
+    await redis.set(
+      sessionKey,
+      JSON.stringify({
+        userId: user._id,
+        role: user.role,
+      }),
       "EX",
-      60 * 60 * 24,
-      // "NX"
+      60 * 60 * 24
     );
 
-    if (!result) {
-      return res.status(403).json({
-        message: "Account is already active on another device.",
-      });
-    }
-    console.log("Existing session:", result);
-console.log("Type:", typeof result);
-
-      // ✅ Save session in Redis
-      await redis.set(
-        `user_session:${user._id}`,
-        sessionId,
-        "EX",
-        60 * 60 * 24, // 24h
-      );
-    } catch (redisErr) {
-      console.error("Redis Error:", redisErr);
-      // Optional: decide if you want to block login if Redis is down
-    }
+    // ==============================
+    // 🔑 Generate JWT
+    // ==============================
 
     const token = jwt.sign(
-      { id: user._id, role: user.role, sessionId },
+      {
+        id: user._id,
+        role: user.role,
+        sessionId,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
+
+    // ==============================
+    // ✅ Send Response
+    // ==============================
 
     res.status(200).json({
       token,
@@ -105,9 +128,10 @@ console.log("Type:", typeof result);
         role: user.role,
       },
     });
+
   } catch (err) {
-    console.error(err); // Log the full error for you
-    res.status(500).json({ message: "Internal Server Error" }); // Clean message for user
+    console.error("Login Error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
 

@@ -228,17 +228,17 @@ exports.syncAnswersService = async (attemptId, userId, answers) => {
 
   for (let ans of answers) {
     if (!ans.questionId) continue;
-
     if (!ans.selectedOption) continue;
 
-    const optionId =
+    // Fix: Store the label (e.g. 'A') to match correctAnswer and for better readability
+    const optionLabel =
       typeof ans.selectedOption === "object"
-        ? ans.selectedOption._id
+        ? (ans.selectedOption.label || ans.selectedOption._id)
         : ans.selectedOption;
 
-    if (!optionId) continue;
+    if (!optionLabel) continue;
 
-    incomingMap[ans.questionId] = optionId;
+    incomingMap[ans.questionId] = optionLabel;
   }
 
   // 5️⃣ Remove deleted answers (present in Redis but not in payload)
@@ -327,7 +327,7 @@ exports.submitExamService = async (attemptId, userId) => {
     await redis.del(`answers:${attemptId}`);
     await redis.del(lockKey);
 
-    return { message: "Exam submitted successfully", score };
+    return { message: "Exam submitted successfully. Your result is pending review." };
 
   } catch (err) {
     await session.abortTransaction();

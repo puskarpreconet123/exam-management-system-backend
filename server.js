@@ -1,7 +1,7 @@
 require("dotenv").config();
 const http = require("http");
 const mongoose = require("mongoose");
-const { Server } = require("socket.io");
+const { initSocket } = require("./src/config/socket");
 
 const app = require("./src/app");
 const connectDB = require("./src/config/db");
@@ -15,29 +15,8 @@ const PORT = process.env.PORT || 5000;
 // Create HTTP server
 const server = http.createServer(app);
 
-// Attach Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:5174" ,
-    methods: ["GET", "POST"],
-  },
-});
-
-// Export io instead of using global
-module.exports.io = io;
-
-// Socket connection handler
-io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
-
-  socket.on("join_admin_room", () => {
-    socket.join("admin_room");
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-  });
-});
+// Initialize Socket.IO using the new shared config
+initSocket(server);
 
 // ----------- START SERVER FUNCTION -----------
 const startServer = async () => {
@@ -56,8 +35,8 @@ const startServer = async () => {
     });
 
     startRedisSyncWorker();
-     startRedisExpiryListener(); // PRIMARY
-     startFallbackCron();        // BACKUP
+    startRedisExpiryListener(); // PRIMARY
+    startFallbackCron();        // BACKUP
   } catch (error) {
     console.error("Server startup failed:", error);
     process.exit(1);

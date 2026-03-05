@@ -18,7 +18,7 @@ app.use(compression());
 // CORS
 app.use(cors({
   origin: process.env.CLIENT_URL || "http://localhost:5174",
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
   credentials: true
 }));
 

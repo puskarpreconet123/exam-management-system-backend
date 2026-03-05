@@ -1,6 +1,7 @@
 const examService = require("../services/examService");
 const Exam = require("../models/Exam");
 const ExamAttempt = require("../models/ExamAttempt");
+const suspiciousService = require("../services/sucpiciousService");
 
 exports.startExam = async (req, res) => {
   try {
@@ -16,7 +17,7 @@ exports.startExam = async (req, res) => {
 
 exports.syncAnswers = async (req, res) => {
   console.log(req.body.answers);
-  
+
   try {
     const result = await examService.syncAnswersService(
       req.params.attemptId,
@@ -37,6 +38,29 @@ exports.submitExam = async (req, res) => {
       req.user.id
     );
     res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+exports.reportViolation = async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { type, metadata } = req.body;
+    const userId = req.user.id;
+
+    const attempt = await ExamAttempt.findById(attemptId).lean();
+    if (!attempt) return res.status(404).json({ message: "Attempt not found" });
+
+    await suspiciousService.logSuspiciousActivity({
+      userId,
+      examId: attempt.examId,
+      attemptId,
+      type,
+      metadata
+    });
+
+    res.status(200).json({ message: "Violation reported" });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -111,7 +135,6 @@ exports.getExamsByUserId = async (req, res) => {
 
     for (let exam of exams) {
       const attempt = attemptMap.get(exam._id.toString());
-
       if (attempt) {
         // 🔹 Attempt exists
         if (attempt.status === "active") {
@@ -123,8 +146,9 @@ exports.getExamsByUserId = async (req, res) => {
         } else if (attempt.status === "submitted" || attempt.status === "timeout") {
           submitted.push({
             ...exam,
-            score: attempt.score,
+            score: attempt.isPublished ? attempt.score : null,
             submittedAt: attempt.submittedAt,
+            isPublished: attempt.isPublished
           });
         }
       } else {
@@ -148,5 +172,26 @@ exports.getExamsByUserId = async (req, res) => {
   } catch (err) {
     console.error("getExamsByUserId error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.getResult = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const publishedAttempts = await ExamAttempt
+      .find({ userId, isPublished: true })
+      .populate("examId").lean()
+
+    res.status(200).json({ publishedAttempts
+    });
+
+  } catch (error) {
+    console.log("Error while fetching result of the user:", error.message);
+
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
   }
 };

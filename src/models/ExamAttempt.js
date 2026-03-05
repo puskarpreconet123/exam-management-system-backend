@@ -39,6 +39,10 @@ const examAttemptSchema = new mongoose.Schema(
       default: null,
       min: 0,
     },
+    isPublished: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

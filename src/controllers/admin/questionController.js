@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Question = require("../../models/Question");
-const redis = require("../../config/redis");
+const { redis } = require("../../config/redis");
 
 /*
 |--------------------------------------------------------------------------
@@ -12,10 +12,10 @@ exports.createQuestion = async (req, res) => {
     const {
       text,
       options,
-      correctAnswer,
       difficulty,
       subject,
     } = req.body;
+    const correctAnswer = req.body.correctAnswer.toUpperCase()
 
     // Basic validation
     if (
@@ -27,22 +27,21 @@ exports.createQuestion = async (req, res) => {
       !subject
     ) {
       return res.status(400).json({
-        message: "All fields are required",
+        message: "All fields (text, options, correctAnswer, difficulty, subject) are required",
       });
     }
 
     if (!["easy", "medium", "hard"].includes(difficulty)) {
       return res.status(400).json({
-        message: "Invalid difficulty",
+        message: "Invalid difficulty. Must be easy, medium, or hard",
       });
     }
 
     // Validate options format
-    const optionValues = options.map(o => o.value);
-
-    if (!optionValues.includes(correctAnswer)) {
+    const optionLabels = options.map(o => o.label);
+    if (!optionLabels.includes(correctAnswer.toUpperCase())) {
       return res.status(400).json({
-        message: "Correct answer must match one of the option values",
+        message: "Correct answer must match one of the option values exactly",
       });
     }
 
@@ -81,11 +80,12 @@ exports.bulkUploadQuestions = async (req, res) => {
 
     if (!Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({
-        message: "Invalid payload",
+        message: "Invalid payload: 'questions' must be a non-empty array",
       });
     }
 
-    for (const q of questions) {
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
       if (
         !q.text ||
         !Array.isArray(q.options) ||
@@ -95,15 +95,16 @@ exports.bulkUploadQuestions = async (req, res) => {
         !q.subject
       ) {
         return res.status(400).json({
-          message: "One or more questions are invalid",
+          message: `Question #${i + 1} is invalid. Ensure all fields (text, options, correctAnswer, difficulty, subject) are present and correctly formatted.`,
         });
       }
 
-      const optionValues = q.options.map(o => o.value);
-
-      if (!optionValues.includes(q.correctAnswer)) {
+      const optionLabels = q.options.map(o => o.label);
+      
+      if (!optionLabels.includes(q.correctAnswer)) {
+        console.log(optionLabels);
         return res.status(400).json({
-          message: "Correct answer must exist in options",
+          message: `Question #${i + 1} Error: Correct answer "${q.correctAnswer}" must exist in the provided options values: [${optionLabels.join(', ')}]`,
         });
       }
     }
@@ -133,7 +134,7 @@ exports.bulkUploadQuestions = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("BulkUpload Error:", err);
+    console.error("BulkUpload Error:", err.message);
     res.status(500).json({
       message: "Bulk upload failed",
     });

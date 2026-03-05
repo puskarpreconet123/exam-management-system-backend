@@ -1,5 +1,7 @@
 const SuspiciousLog = require("../../models/SuspiciousLog");
+const ExamAttempt = require("../../models/ExamAttempt");
 const examService = require("../../services/examService");
+const { getIO } = require("../../config/socket");
 
 exports.getSuspiciousLogs = async (req, res) => {
   try {
@@ -20,6 +22,7 @@ exports.getSuspiciousLogs = async (req, res) => {
 
     const logs = await SuspiciousLog.find(query)
       .populate("userId", "name email")
+      .populate("attemptId", "status")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
@@ -62,6 +65,16 @@ exports.forceSubmit = async (req, res) => {
       attemptId,
       attempt.userId.toString()
     );
+
+    // Notify student via socket
+    try {
+      const io = getIO();
+      io.to(`exam_${attemptId}`).emit("exam_terminated", {
+        message: "Your exam session has been terminated by an administrator.",
+      });
+    } catch (err) {
+      console.error("Socket notification failed:", err.message);
+    }
 
     res.json({
       message: "Force submitted successfully",

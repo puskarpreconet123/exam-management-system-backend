@@ -15,6 +15,9 @@ router.get("/questions", auth, role("admin"), questionCtrl.getQuestions);
 router.post("/exams", auth, role("admin"), examCtrl.createExam);
 router.get("/exams", auth, role("admin"), examCtrl.getExams);
 router.get("/exams/:examId/attempts", auth, role("admin"), examCtrl.getExamAttempts);
+router.get("/exams/attempt-response/:attemptId", auth, role("admin"), examCtrl.getAttemptResponse);
+router.patch("/exams/evaluate/:attemptId", auth, role("admin"), examCtrl.evaluateAttempt);
+router.patch("/exams/publish-result/:attemptId", auth, role("admin"), examCtrl.publishResult);
 
 // Monitoring
 router.get("/suspicious", auth, role("admin"), monitorCtrl.getSuspiciousLogs);

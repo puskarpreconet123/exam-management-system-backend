@@ -46,9 +46,9 @@ questionSchema.index({ subject: 1, difficulty: 1 });
 
 // Ensure correctAnswer matches options
 questionSchema.pre("validate", async function () {
-  const optionValues = this.options.map((o) => o.value);
+  const optionLabels = this.options.map((o) => o.label);
 
-  if (!optionValues.includes(this.correctAnswer)) {
+  if (!optionLabels.includes(this.correctAnswer)) {
     throw new Error("correctAnswer must match one of the options");
   }
 
