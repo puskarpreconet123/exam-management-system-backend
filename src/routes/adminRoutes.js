@@ -9,6 +9,8 @@ const monitorCtrl = require("../controllers/admin/monitoringController");
 // Question Routes
 router.post("/questions", auth, role("admin"), questionCtrl.createQuestion);
 router.post("/questions/bulk", auth, role("admin"), questionCtrl.bulkUploadQuestions);
+router.get("/questions/summary", auth, role("admin"), questionCtrl.getQuestionSummary);
+router.get("/questions/by-group", auth, role("admin"), questionCtrl.getQuestionsByGroup);
 router.get("/questions", auth, role("admin"), questionCtrl.getQuestions);
 
 // Exam Routes
@@ -22,5 +24,8 @@ router.patch("/exams/publish-result/:attemptId", auth, role("admin"), examCtrl.p
 // Monitoring
 router.get("/suspicious", auth, role("admin"), monitorCtrl.getSuspiciousLogs);
 router.post("/force-submit/:attemptId", auth, role("admin"), monitorCtrl.forceSubmit);
+
+//user Count
+router.get("/totalUser", auth, role("admin"), examCtrl.getTotalUserNo)
 
 module.exports = router;

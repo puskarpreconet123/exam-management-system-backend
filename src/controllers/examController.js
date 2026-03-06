@@ -152,12 +152,23 @@ exports.getExamsByUserId = async (req, res) => {
           });
         }
       } else {
-        // 🔹 No attempt exists
-        if (now < exam.startTime || now <= new Date(exam.startTime).getTime() + 30 * 60 * 1000) { //min * sec * ms
-          upcoming.push(exam);
-        } else if (now > new Date(exam.startTime).getTime() + 30 * 60 * 1000) {
-          // Missed exam
-          expired.push(exam);
+        // 🔹 No attempt exists — categorise by scheduling type
+        if (exam.schedulingType === "range") {
+          // Range exam: available between startTime and endTime
+          if (now < exam.startTime) {
+            upcoming.push(exam); // Not started yet
+          } else if (exam.endTime && now <= exam.endTime) {
+            upcoming.push(exam); // Within the active window — joinable
+          } else {
+            expired.push(exam); // Past the end time
+          }
+        } else {
+          // Fixed exam: 30-min join window from startTime
+          if (now < exam.startTime || now <= new Date(exam.startTime).getTime() + 30 * 60 * 1000) {
+            upcoming.push(exam);
+          } else {
+            expired.push(exam); // Missed exam
+          }
         }
       }
     }
@@ -183,7 +194,8 @@ exports.getResult = async (req, res) => {
       .find({ userId, isPublished: true })
       .populate("examId").lean()
 
-    res.status(200).json({ publishedAttempts
+    res.status(200).json({
+      publishedAttempts
     });
 
   } catch (error) {

@@ -17,7 +17,7 @@ module.exports = async (req, res, next) => {
 
     // 2️⃣ Fetch minimal fields only
     const exam = await Exam.findById(examId)
-      .select("startTime endTime duration")
+      .select("startTime endTime duration schedulingType")
       .lean();
 
     if (!exam) {
@@ -28,46 +28,54 @@ module.exports = async (req, res, next) => {
 
     const now = new Date();
 
-    // 3️⃣ Exam not started
+    // 3️⃣ Exam not started yet
     if (now < exam.startTime) {
       return res.status(400).json({
         message: "Exam not started yet",
       });
     }
 
-    // 4️⃣ Exam fully ended
-    if (exam.endTime && now > exam.endTime) {
-      return res.status(400).json({
-        message: "Exam already ended",
-      });
-    }
-
-    // 5️⃣ Check existing attempt (minimal fields)
-    const existingAttempt = await ExamAttempt.findOne({
-      examId,
-      userId,
-    })
-      .select("_id status expiresAt")
-      .lean();
-
-    // 6️⃣ Late entry check (only if no attempt)
-    if (!existingAttempt) {
-      const lateDeadline = new Date(
-        new Date(exam.startTime).getTime() + 30 * 60 * 1000
-      );
-
-      if (now > lateDeadline) {
-        await suspiciousService.logSuspiciousActivity({
-          userId,
-          examId,
-          type: "LATE_START_ATTEMPT",
-        });
-
-        return res.status(403).json({
-          message: "Start window closed",
+    // 4️⃣ For range-type exams: check endTime boundary
+    if (exam.schedulingType === "range") {
+      if (exam.endTime && now > exam.endTime) {
+        return res.status(400).json({
+          message: "Exam window has closed",
         });
       }
+      // No late-entry restriction for range exams; skip to attempt check
+    } else {
+      // 5️⃣ Fixed-type: check 30-min late entry window (only if no existing attempt)
+      const existingAttemptCheck = await ExamAttempt.findOne({ examId, userId })
+        .select("_id status expiresAt")
+        .lean();
+
+      if (!existingAttemptCheck) {
+        const lateDeadline = new Date(
+          new Date(exam.startTime).getTime() + 30 * 60 * 1000
+        );
+
+        if (now > lateDeadline) {
+          await suspiciousService.logSuspiciousActivity({
+            userId,
+            examId,
+            type: "LATE_START_ATTEMPT",
+          });
+
+          return res.status(403).json({
+            message: "Start window closed",
+          });
+        }
+      }
+
+      req.exam = exam;
+      req.attempt = existingAttemptCheck || null;
+      return next();
     }
+
+    // 6️⃣ Fetch existing attempt for range-type exams
+    const existingAttempt = await ExamAttempt.findOne({ examId, userId })
+      .select("_id status expiresAt")
+      .lean();
 
     req.exam = exam;
     req.attempt = existingAttempt || null;

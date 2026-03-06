@@ -100,7 +100,7 @@ exports.bulkUploadQuestions = async (req, res) => {
       }
 
       const optionLabels = q.options.map(o => o.label);
-      
+
       if (!optionLabels.includes(q.correctAnswer)) {
         console.log(optionLabels);
         return res.status(400).json({
@@ -143,7 +143,7 @@ exports.bulkUploadQuestions = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| GET QUESTIONS (Paginated)
+| GET QUESTIONS (Paginated - kept for backward compat)
 |--------------------------------------------------------------------------
 */
 exports.getQuestions = async (req, res) => {
@@ -170,5 +170,88 @@ exports.getQuestions = async (req, res) => {
     res.status(500).json({
       message: "Failed to fetch questions",
     });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET QUESTION SUMMARY (Aggregated - Subject > Difficulty > Count)
+|--------------------------------------------------------------------------
+*/
+exports.getQuestionSummary = async (req, res) => {
+  try {
+    const summary = await Question.aggregate([
+      {
+        $group: {
+          _id: { subject: "$subject", difficulty: "$difficulty" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.subject",
+          difficulties: {
+            $push: {
+              difficulty: "$_id.difficulty",
+              count: "$count",
+            },
+          },
+          total: { $sum: "$count" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // reshape to { subject, total, difficulties: [{ difficulty, count }] }
+    const result = summary.map(s => ({
+      subject: s._id,
+      total: s.total,
+      difficulties: s.difficulties.sort((a, b) => {
+        const order = ['easy', 'medium', 'hard'];
+        return order.indexOf(a.difficulty) - order.indexOf(b.difficulty);
+      }),
+    }));
+
+    const totalRecords = result.reduce((sum, s) => sum + s.total, 0);
+
+    res.json({ data: result, totalRecords });
+  } catch (err) {
+    console.error("getQuestionSummary Error:", err);
+    res.status(500).json({ message: "Failed to fetch question summary" });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET QUESTIONS BY GROUP (Lazy-Load for a specific subject + difficulty)
+|--------------------------------------------------------------------------
+*/
+exports.getQuestionsByGroup = async (req, res) => {
+  try {
+    const { subject, difficulty } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+
+    if (!subject || !difficulty) {
+      return res.status(400).json({ message: "subject and difficulty are required" });
+    }
+
+    const query = { subject, difficulty };
+    const total = await Question.countDocuments(query);
+    const questions = await Question.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    res.json({
+      data: questions,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit),
+      totalRecords: total,
+    });
+  } catch (err) {
+    console.error("getQuestionsByGroup Error:", err);
+    res.status(500).json({ message: "Failed to fetch questions for group" });
   }
 };
