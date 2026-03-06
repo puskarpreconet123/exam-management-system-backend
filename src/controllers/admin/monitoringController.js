@@ -7,9 +7,10 @@ exports.getSuspiciousLogs = async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 20,
+      limit = 10,
       examId,
       userId,
+      attemptId,
       flagged
     } = req.query;
 
@@ -17,13 +18,14 @@ exports.getSuspiciousLogs = async (req, res) => {
 
     if (examId) query.examId = examId;
     if (userId) query.userId = userId;
+    if (attemptId) query.attemptId = attemptId;
     if (flagged !== undefined)
       query.flagged = flagged === "true";
 
     const logs = await SuspiciousLog.find(query)
       .populate("userId", "name email")
       .populate("attemptId", "status")
-      .sort({ createdAt: -1 })
+      .sort({ updatedAt: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
       .lean();

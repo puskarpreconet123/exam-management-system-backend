@@ -39,6 +39,11 @@ const suspiciousLogSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
     },
 
+    count: {
+      type: Number,
+      default: 1,
+    },
+
     flagged: {
       type: Boolean,
       default: false,

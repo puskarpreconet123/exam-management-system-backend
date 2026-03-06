@@ -9,13 +9,20 @@ exports.logSuspiciousActivity = async ({
   metadata = {},
 }) => {
   try {
-    const log = await SuspiciousLog.create({
-      userId,
-      examId,
-      attemptId,
-      type,
-      metadata,
-      flagged: true,
+    const filter = attemptId ? { attemptId, type } : { userId, examId, type };
+    const update = {
+      $inc: { count: 1 },
+      $set: {
+        userId,
+        examId,
+        metadata,
+        flagged: true,
+      },
+    };
+
+    const log = await SuspiciousLog.findOneAndUpdate(filter, update, {
+      new: true,
+      upsert: true,
     });
 
     // Reliable population for the live feed
