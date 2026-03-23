@@ -72,11 +72,13 @@ async function resumeAttempt(attempt) {
     attemptId: attempt._id,
   }).lean();
 
-  const questions = await Question.find({
+  const unorderedQuestions = await Question.find({
     _id: { $in: responseDoc.questionIds },
   })
     .select("-correctAnswer")
     .lean();
+
+  const questions = responseDoc.questionIds.map(id => unorderedQuestions.find(q => q._id.toString() === id.toString()));
 
   return {
     attemptId: attempt._id,
@@ -93,26 +95,27 @@ GENERATE NEW ATTEMPT
 ========================================
 */
 async function generateNewAttempt(exam, userId) {
-  const total = exam.totalQuestions;
+  let questionIds = [];
 
-  const easyCount = Math.floor((exam.distribution.easy / 100) * total);
-  const mediumCount = Math.floor((exam.distribution.medium / 100) * total);
-  const hardCount = total - easyCount - mediumCount;
+  for (let s of exam.subjects) {
+    const sTotal = s.count;
+    const easyCount = Math.floor((exam.distribution.easy / 100) * sTotal);
+    const mediumCount = Math.floor((exam.distribution.medium / 100) * sTotal);
+    const hardCount = sTotal - easyCount - mediumCount;
 
-  const [easy, medium, hard] = await Promise.all([
-    redis.srandmember("questions:easy", easyCount),
-    redis.srandmember("questions:medium", mediumCount),
-    redis.srandmember("questions:hard", hardCount),
-  ]);
-
-  let questionIds = [...easy, ...medium, ...hard];
-
-  // Shuffle
-  for (let i = questionIds.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [questionIds[i], questionIds[j]] =
-      [questionIds[j], questionIds[i]];
+    const [easy, medium, hard] = await Promise.all([
+      redis.srandmember(`questions:${s.subject}:easy`, easyCount),
+      redis.srandmember(`questions:${s.subject}:medium`, mediumCount),
+      redis.srandmember(`questions:${s.subject}:hard`, hardCount),
+    ]);
+    
+    // Ensure we don't encounter errors if there are not enough questions
+    questionIds.push(...(easy || []), ...(medium || []), ...(hard || []));
   }
+
+  // Questions are already appended in Subject > Difficulty order
+  // Optional: you can shuffle *within* a difficulty group if needed, but not globally.
+  // We'll leave them in the exact order fetched.
 
   const now = new Date();
   const durationSeconds = exam.duration * 60;
@@ -161,11 +164,13 @@ async function generateNewAttempt(exam, userId) {
 
     await redis.sadd("dirty_attempts", attempt._id);
 
-    const questions = await Question.find({
+    const unorderedQuestions = await Question.find({
       _id: { $in: questionIds },
     })
       .select("-correctAnswer")
       .lean();
+
+    const questions = questionIds.map(id => unorderedQuestions.find(q => q._id.toString() === id.toString()));
 
     return {
       attemptId: attempt._id,

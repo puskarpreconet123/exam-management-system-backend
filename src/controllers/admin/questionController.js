@@ -54,7 +54,7 @@ exports.createQuestion = async (req, res) => {
     });
 
     // 🔥 Update Redis pool immediately
-    await redis.sadd(`questions:${difficulty}`, question._id.toString());
+    await redis.sadd(`questions:${subject.trim()}:${difficulty}`, question._id.toString());
 
     res.status(201).json({
       message: "Question created successfully",
@@ -112,19 +112,17 @@ exports.bulkUploadQuestions = async (req, res) => {
     const inserted = await Question.insertMany(questions);
 
     // 🔥 Update Redis in batch
-    const grouped = {
-      easy: [],
-      medium: [],
-      hard: [],
-    };
+    const grouped = {};
 
     inserted.forEach(q => {
-      grouped[q.difficulty].push(q._id.toString());
+      const key = `${q.subject}:${q.difficulty}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(q._id.toString());
     });
 
-    for (let level of ["easy", "medium", "hard"]) {
-      if (grouped[level].length > 0) {
-        await redis.sadd(`questions:${level}`, ...grouped[level]);
+    for (let key of Object.keys(grouped)) {
+      if (grouped[key].length > 0) {
+        await redis.sadd(`questions:${key}`, ...grouped[key]);
       }
     }
 

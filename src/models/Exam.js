@@ -15,6 +15,13 @@ const examSchema = new mongoose.Schema(
       min: 1,
     },
 
+    subjects: [
+      {
+        subject: { type: String, required: true },
+        count: { type: Number, required: true, min: 1 },
+      }
+    ],
+
     distribution: {
       easy: { type: Number, required: true, min: 0, max: 100 },
       medium: { type: Number, required: true, min: 0, max: 100 },

@@ -20,6 +20,7 @@ exports.createExam = async (req, res) => {
       startTime,
       schedulingType = "fixed",
       endTime,
+      subjects,
     } = req.body;
 
     // Basic validation
@@ -28,10 +29,19 @@ exports.createExam = async (req, res) => {
       !totalQuestions ||
       !difficultyDistribution ||
       !durationMinutes ||
-      !startTime
+      !startTime ||
+      !Array.isArray(subjects) ||
+      subjects.length === 0
     ) {
       return res.status(400).json({
-        message: "All fields are required",
+        message: "All fields including subjects are required",
+      });
+    }
+
+    const computedTotal = subjects.reduce((sum, s) => sum + Number(s.count || 0), 0);
+    if (computedTotal !== Number(totalQuestions)) {
+      return res.status(400).json({
+        message: `Total questions (${totalQuestions}) does not match the sum of subject questions (${computedTotal})`,
       });
     }
 
@@ -89,6 +99,7 @@ exports.createExam = async (req, res) => {
     const exam = await Exam.create({
       title: title.trim(),
       totalQuestions,
+      subjects,
       distribution: difficultyDistribution,
       duration: durationMinutes,
       startTime: parsedStart,

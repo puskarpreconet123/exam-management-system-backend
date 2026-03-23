@@ -7,35 +7,37 @@ const loadQuestionsToRedis = async () => {
 
     // 1️⃣ Single DB query
     const questions = await Question.find({})
-      .select("_id difficulty")
+      .select("_id difficulty subject")
       .lean();
 
-    const grouped = {
-      easy: [],
-      medium: [],
-      hard: [],
-    };
+    const grouped = {};
 
     for (let q of questions) {
-      if (grouped[q.difficulty]) {
-        grouped[q.difficulty].push(q._id.toString());
-      }
+      if (!q.subject) continue;
+      const key = `${q.subject}:${q.difficulty}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(q._id.toString());
     }
 
     const pipeline = redis.pipeline();
 
+    // Delete existing keys? Wait, we don't know all existing keys in redis. 
+    // It's better to fetch all keys matching questions:* and delete them.
+    const keys = await redis.keys("questions:*");
+    if (keys.length > 0) {
+      pipeline.del(...keys);
+    }
+
     // 2️⃣ Use pipeline for better performance
-    for (let level of Object.keys(grouped)) {
-      const key = `questions:${level}`;
+    for (let key of Object.keys(grouped)) {
+      const redisKey = `questions:${key}`;
 
-      pipeline.del(key);
-
-      if (grouped[level].length > 0) {
-        pipeline.sadd(key, ...grouped[level]);
+      if (grouped[key].length > 0) {
+        pipeline.sadd(redisKey, ...grouped[key]);
       }
 
       console.log(
-        `Prepared ${grouped[level].length} ${level} questions`
+        `Prepared ${grouped[key].length} questions for ${key}`
       );
     }
 
