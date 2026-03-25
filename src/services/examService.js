@@ -132,6 +132,7 @@ async function generateNewAttempt(exam, userId) {
         startedAt: now,
         expiresAt,
         status: "active",
+        isDemo: Boolean(exam.title && exam.title.toLowerCase().startsWith("demo exam")),
       }],
       { session }
     );
@@ -310,6 +311,12 @@ exports.submitExamService = async (attemptId, userId) => {
     attempt.status = "submitted";
     attempt.submittedAt = new Date();
     attempt.score = score;
+    
+    // Auto-publish if it's a Demo Exam
+    if (attempt.isDemo) {
+      attempt.isPublished = true;
+    }
+
     await attempt.save({ session });
 
     await ExamResponse.updateOne(

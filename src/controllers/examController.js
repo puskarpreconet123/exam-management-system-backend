@@ -1,6 +1,9 @@
 const examService = require("../services/examService");
 const Exam = require("../models/Exam");
+const User = require("../models/User");
 const ExamAttempt = require("../models/ExamAttempt");
+const ExamResponse = require("../models/ExamResponse");
+const Question = require("../models/Question");
 const suspiciousService = require("../services/sucpiciousService");
 
 exports.startExam = async (req, res) => {
@@ -116,6 +119,10 @@ exports.getExamsByUserId = async (req, res) => {
     const userId = req.user.id;
     const now = new Date();
 
+    const user = await User.findById(userId).select("createdAt").lean();
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const userCreatedAt = user.createdAt || new Date(0);
+
     // 1️⃣ Fetch all exams (lean for performance)
     const exams = await Exam.find().lean();
 
@@ -160,14 +167,18 @@ exports.getExamsByUserId = async (req, res) => {
           } else if (exam.endTime && now <= exam.endTime) {
             upcoming.push(exam); // Within the active window — joinable
           } else {
-            expired.push(exam); // Past the end time
+            if (userCreatedAt <= exam.startTime) {
+              expired.push(exam); // Past the end time
+            }
           }
         } else {
           // Fixed exam: 30-min join window from startTime
           if (now < exam.startTime || now <= new Date(exam.startTime).getTime() + 30 * 60 * 1000) {
             upcoming.push(exam);
           } else {
-            expired.push(exam); // Missed exam
+            if (userCreatedAt <= exam.startTime) {
+              expired.push(exam); // Missed exam
+            }
           }
         }
       }
@@ -205,5 +216,58 @@ exports.getResult = async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+};
+
+exports.getDetailedResult = async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const userId = req.user.id;
+
+    const attempt = await ExamAttempt.findOne({ _id: attemptId, userId }).lean();
+    if (!attempt) return res.status(404).json({ message: "Attempt not found." });
+    if (!attempt.isPublished) return res.status(403).json({ message: "Results for this exam are not published yet" });
+
+    const exam = await Exam.findById(attempt.examId).lean();
+    
+    const responseDoc = await ExamResponse.findOne({ attemptId }).lean();
+    if (!responseDoc) return res.status(404).json({ message: "Response data not found" });
+
+    const questions = await Question.find({ _id: { $in: responseDoc.questionIds } }).lean();
+
+    const answersMap = {};
+    for (let ans of responseDoc.answers) {
+      answersMap[ans.questionId.toString()] = ans.selectedOption;
+    }
+
+    const detailedQuestions = responseDoc.questionIds.map(qid => {
+      const q = questions.find(question => question._id.toString() === qid.toString());
+      if (!q) return null;
+      return {
+        _id: q._id,
+        text: q.text,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        userAnswer: answersMap[q._id.toString()] || null
+      };
+    }).filter(Boolean);
+
+    res.json({
+      exam: {
+         title: exam.title,
+         totalQuestions: exam.totalQuestions,
+         duration: exam.duration
+      },
+      attempt: {
+         score: attempt.score,
+         submittedAt: attempt.submittedAt,
+         percentage: Math.round((attempt.score / exam.totalQuestions) * 100)
+      },
+      questions: detailedQuestions
+    });
+
+  } catch (err) {
+    console.error("Get detailed result error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 };

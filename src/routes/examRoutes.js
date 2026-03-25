@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const { startExam, syncAnswers, submitExam, getAllExams, getExamsByUserId, getResult } = require("../controllers/examController");
+const { startExam, syncAnswers, submitExam, getAllExams, getExamsByUserId, getResult, getDetailedResult } = require("../controllers/examController");
 const auth = require("../middleware/auth");
 const role = require("../middleware/role");
 const examAccess = require("../middleware/examAccess")
@@ -18,5 +18,6 @@ router.post( "/report-violation/:attemptId", auth, role("student"), attemptActiv
 router.get("/", getAllExams)
 router.get("/results", auth, role("student"), getResult)
 router.get("/:userId", auth, role("student"), getExamsByUserId)
+router.get("/result/:attemptId", auth, role("student"), getDetailedResult)
 
 module.exports = router;
