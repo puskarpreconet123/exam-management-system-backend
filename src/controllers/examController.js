@@ -36,11 +36,15 @@ exports.syncAnswers = async (req, res) => {
 
 exports.submitExam = async (req, res) => {
   try {
-    const result = await examService.submitExamService(
-      req.params.attemptId,
-      req.user.id
-    );
-    res.status(200).json(result);
+    const { examQueue } = require("../queues/examQueue");
+    
+    await examQueue.add("manual-submit", {
+      attemptId: req.params.attemptId,
+      userId: req.user.id,
+      source: "manual"
+    });
+
+    res.status(200).json({ message: "Exam submitted successfully. Your result is pending review." });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

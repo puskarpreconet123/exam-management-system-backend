@@ -14,14 +14,17 @@ exports.startFallbackCron = () => {
         .select("_id userId")
         .limit(100); // prevent overload
 
+      const { examQueue } = require("../queues/examQueue");
+
       for (let attempt of expiredAttempts) {
         try {
-          await examService.submitExamService(
-            attempt._id,
-            attempt.userId.toString()
-          );
+          await examQueue.add("cron-submit", {
+            attemptId: attempt._id,
+            userId: attempt.userId.toString(),
+            source: "cron"
+          });
         } catch (err) {
-          // ignore already submitted
+          // ignore already queued
         }
       }
 

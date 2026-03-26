@@ -9,6 +9,7 @@ const loadQuestionsToRedis = require("./src/utils/loadQuestionsToRedis");
 const { startRedisExpiryListener } = require("./src/jobs/redisExpirationListener");
 const { startFallbackCron } = require("./src/jobs/cronJob");
 const { startRedisSyncWorker } = require("./src/jobs/redisSyncToDB");
+require("./src/queues/examQueue"); // Import BullMQ worker
 
 const PORT = process.env.PORT || 5000;
 

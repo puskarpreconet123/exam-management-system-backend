@@ -27,12 +27,14 @@ exports.startRedisExpiryListener = async () => {
 
           if (!attempt || attempt.status !== "active") return;
 
-          await examService.submitExamService(
+          const { examQueue } = require("../queues/examQueue");
+          await examQueue.add("auto-submit", {
             attemptId,
-            attempt.userId.toString()
-          );
+            userId: attempt.userId.toString(),
+            source: "redis-expiration"
+          });
 
-          console.log("Auto-submitted via Redis:", attemptId);
+          console.log("Queued auto-submit via Redis:", attemptId);
 
         } catch (err) {
           console.error("Redis auto-submit failed:", err.message);
