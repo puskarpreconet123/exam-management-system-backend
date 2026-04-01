@@ -21,6 +21,8 @@ exports.createExam = async (req, res) => {
       schedulingType = "fixed",
       endTime,
       subjects,
+      board = "General",
+      class: className = "General",
     } = req.body;
 
     // Basic validation
@@ -105,6 +107,8 @@ exports.createExam = async (req, res) => {
       startTime: parsedStart,
       schedulingType,
       endTime: parsedEnd,
+      board: board.trim(),
+      class: className.trim(),
     });
 
     res.status(201).json({

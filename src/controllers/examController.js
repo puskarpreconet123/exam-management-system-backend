@@ -123,12 +123,20 @@ exports.getExamsByUserId = async (req, res) => {
     const userId = req.user.id;
     const now = new Date();
 
-    const user = await User.findById(userId).select("createdAt").lean();
+    const user = await User.findById(userId).select("createdAt studentDetails").lean();
     if (!user) return res.status(404).json({ message: "User not found" });
     const userCreatedAt = user.createdAt || new Date(0);
+    
+    const board = user.studentDetails?.board || "General";
+    const className = user.studentDetails?.className || "General";
 
-    // 1️⃣ Fetch all exams (lean for performance)
-    const exams = await Exam.find().lean();
+    // 1️⃣ Fetch all exams (filtered by matching board and class, plus all demo exams)
+    const exams = await Exam.find({
+      $or: [
+        { board, class: className },
+        { title: { $regex: /^demo exam/i } }
+      ]
+    }).lean();
 
     // 2️⃣ Fetch all user attempts
     const attempts = await ExamAttempt.find({ userId }).lean();

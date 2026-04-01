@@ -14,6 +14,8 @@ exports.createQuestion = async (req, res) => {
       options,
       difficulty,
       subject,
+      board = "General",
+      class: className = "General",
     } = req.body;
     const correctAnswer = req.body.correctAnswer.toUpperCase()
 
@@ -24,7 +26,9 @@ exports.createQuestion = async (req, res) => {
       options.length < 2 ||
       !correctAnswer ||
       !difficulty ||
-      !subject
+      !subject ||
+      !board ||
+      !className
     ) {
       return res.status(400).json({
         message: "All fields (text, options, correctAnswer, difficulty, subject) are required",
@@ -51,10 +55,12 @@ exports.createQuestion = async (req, res) => {
       correctAnswer,
       difficulty,
       subject: subject.trim(),
+      board: board.trim(),
+      class: className.trim(),
     });
 
     // 🔥 Update Redis pool immediately
-    await redis.sadd(`questions:${subject.trim()}:${difficulty}`, question._id.toString());
+    await redis.sadd(`questions:${board.trim()}:${className.trim()}:${subject.trim()}:${difficulty}`, question._id.toString());
 
     res.status(201).json({
       message: "Question created successfully",
@@ -95,9 +101,13 @@ exports.bulkUploadQuestions = async (req, res) => {
         !q.subject
       ) {
         return res.status(400).json({
-          message: `Question #${i + 1} is invalid. Ensure all fields (text, options, correctAnswer, difficulty, subject) are present and correctly formatted.`,
+          message: `Question #${i + 1} is invalid. Ensure all fields (text, options, correctAnswer, difficulty, subject) are present.`,
         });
       }
+
+      // Assign defaults for bulk if not present
+      if (!q.board) q.board = "General";
+      if (!q.class) q.class = "General";
 
       const optionLabels = q.options.map(o => o.label);
 
@@ -115,7 +125,7 @@ exports.bulkUploadQuestions = async (req, res) => {
     const grouped = {};
 
     inserted.forEach(q => {
-      const key = `${q.subject}:${q.difficulty}`;
+      const key = `${q.board}:${q.class}:${q.subject}:${q.difficulty}`;
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(q._id.toString());
     });
@@ -178,7 +188,10 @@ exports.getQuestions = async (req, res) => {
 */
 exports.getQuestionSummary = async (req, res) => {
   try {
+    const { board = "General", class: className = "General" } = req.query;
+    
     const summary = await Question.aggregate([
+      { $match: { board, class: className } },
       {
         $group: {
           _id: { subject: "$subject", difficulty: "$difficulty" },
@@ -226,7 +239,7 @@ exports.getQuestionSummary = async (req, res) => {
 */
 exports.getQuestionsByGroup = async (req, res) => {
   try {
-    const { subject, difficulty } = req.query;
+    const { subject, difficulty, board = "General", class: className = "General" } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 30;
 
@@ -234,7 +247,7 @@ exports.getQuestionsByGroup = async (req, res) => {
       return res.status(400).json({ message: "subject and difficulty are required" });
     }
 
-    const query = { subject, difficulty };
+    const query = { subject, difficulty, board, class: className };
     const total = await Question.countDocuments(query);
     const questions = await Question.find(query)
       .sort({ createdAt: -1 })

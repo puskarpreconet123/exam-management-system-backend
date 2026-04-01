@@ -17,12 +17,19 @@ module.exports = async (req, res, next) => {
 
     // 2️⃣ Fetch minimal fields only
     const exam = await Exam.findById(examId)
-      .select("startTime endTime duration schedulingType")
+      .select("title startTime endTime duration schedulingType")
       .lean();
 
     if (!exam) {
       return res.status(404).json({
         message: "Exam not found",
+      });
+    }
+
+    const isDemo = Boolean(exam.title && exam.title.toLowerCase().startsWith("demo exam"));
+    if (!isDemo && req.user.paymentStatus !== "completed") {
+      return res.status(403).json({
+        message: "You must complete payment or apply a referral code to access full exams. Only demo exams are accessible.",
       });
     }
 

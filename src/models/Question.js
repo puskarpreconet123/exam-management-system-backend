@@ -37,12 +37,24 @@ const questionSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    board: {
+      type: String,
+      required: true,
+      default: "General",
+    },
+
+    class: {
+      type: String,
+      required: true,
+      default: "General",
+    },
   },
   { timestamps: true }
 );
 
-// Compound index for fast question picking
-questionSchema.index({ subject: 1, difficulty: 1 });
+// Compound index for fast question picking with board and class
+questionSchema.index({ board: 1, class: 1, subject: 1, difficulty: 1 });
 
 // Ensure correctAnswer matches options
 questionSchema.pre("validate", async function () {

@@ -59,6 +59,18 @@ const examSchema = new mongoose.Schema(
       default: "draft",
       index: true,
     },
+
+    board: {
+      type: String,
+      required: true,
+      default: "General",
+    },
+
+    class: {
+      type: String,
+      required: true,
+      default: "General",
+    },
   },
   { timestamps: true }
 );

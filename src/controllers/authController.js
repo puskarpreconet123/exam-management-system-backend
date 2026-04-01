@@ -2,45 +2,149 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const User = require("../models/User");
+const Referral = require("../models/Referral");
 const { redis } = require("../config/redis");
-const { log } = require("console");
+const otpService = require("../utils/otpService");
+
+// ================= SEND OTP =================
+exports.sendOtp = async (req, res) => {
+  try {
+    const { contact, type } = req.body;
+    if (!contact || !['email', 'phone'].includes(type)) {
+      return res.status(400).json({ message: "Invalid contact or type" });
+    }
+
+    await otpService.generateAndSendOTP(contact, type);
+    res.status(200).json({ message: `OTP sent to ${contact}` });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// ================= VERIFY OTP =================
+exports.verifyOtp = async (req, res) => {
+  try {
+    const { contact, type, otp } = req.body;
+    if (!contact || !type || !otp) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    await otpService.verifyOTP(contact, type, otp);
+    res.status(200).json({ message: "Verified successfully" });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// ================= VERIFY REFERRAL =================
+exports.verifyReferral = async (req, res) => {
+  try {
+    const { code, schoolName } = req.body;
+    if (!code) return res.status(400).json({ message: "Referral code is required" });
+
+    const referral = await Referral.findOne({ code: code.toUpperCase(), schoolName: schoolName.trim() });
+    if (!referral) return res.status(404).json({ message: "Invalid referral code or school name" });
+    if (!referral.isActive) return res.status(400).json({ message: "Referral code is no longer active" });
+
+    res.status(200).json({ message: "Referral code is valid", schoolName: referral.schoolName });
+  } catch (err) {
+    res.status(500).json({ message: "Server Error", error: err.message });
+  }
+};
 
 // ================= REGISTER =================
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const {
+      studentName, dob, board, schoolName, className, studentContact, email, password,
+      guardianName, guardianContact, guardianEmail,
+      country, state, district, customState, customDistrict, locality, pin,
+      referralCode, paymentType, transactionId
+    } = req.body;
 
-    if (!name || !email || !password)
-      return res.status(400).json({
-        message: "All fields required",
-      });
+    if (!studentName || !email || !password || !studentContact) {
+      return res.status(400).json({ message: "Core student fields are required" });
+    }
 
-    const existing = await User.findOne({ email });
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) return res.status(400).json({ message: "Email already registered" });
 
-    if (existing)
-      return res.status(400).json({
-        message: "Email already registered",
-      });
+    const existingPhone = await User.findOne({ "studentDetails.studentContact": studentContact });
+    if (existingPhone) return res.status(400).json({ message: "Phone number already registered" });
 
-    const hashedPassword = await bcrypt.hash(
-      password,
-      10
-    );
+    // Validate OTPs were verified
+    const isEmailVerified = await redis.get(`verified:email:${email}`);
+    const isPhoneVerified = await redis.get(`verified:phone:${studentContact}`);
+
+    if (!isEmailVerified || !isPhoneVerified) {
+      // Returning error directly since we are enforcing verified OTPs
+      // Disable this logic temporarily if strictly testing without UI sending OTP payload
+      return res.status(400).json({ message: "You must verify both email and mobile via OTP before registering" });
+    }
+
+    let finalPaymentStatus = 'pending';
+    let finalTxnId = null;
+    let usedReferral = null;
+
+    // Referral logic
+    if (referralCode) {
+      const validReferral = await Referral.findOne({ code: referralCode.toUpperCase(), isActive: true });
+      if (validReferral) {
+        usedReferral = validReferral.code;
+        if (validReferral.paymentType === 'offline') {
+          finalPaymentStatus = 'completed';
+          finalTxnId = validReferral.code;
+        } else {
+          // It's 'online', so follow normal payment options
+          if (paymentType === 'pay_now' && transactionId) {
+            finalPaymentStatus = 'completed';
+            finalTxnId = transactionId;
+          }
+        }
+      } else {
+        return res.status(400).json({ message: "Invalid or inactive referral code provided" });
+      }
+    } else {
+      // Normal payment calculation
+      if (paymentType === 'pay_now' && transactionId) {
+        finalPaymentStatus = 'completed';
+        finalTxnId = transactionId;
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await User.create({
-      name,
-      email,
+      name: studentName,
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
-      // role auto = student
+      studentDetails: { dob, board, schoolName, className, studentContact },
+      guardianDetails: { guardianName, guardianContact, guardianEmail },
+      address: { country, state, customState, district, customDistrict, locality, pin },
+      paymentStatus: finalPaymentStatus,
+      transactionId: finalTxnId,
+      usedReferralCode: usedReferral,
+      emailVerified: !!isEmailVerified,
+      phoneVerified: !!isPhoneVerified
     });
 
     res.status(201).json({
       message: "Registered successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        paymentStatus: user.paymentStatus,
+        usedReferralCode: user.usedReferralCode
+      }
     });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 // ================= LOGIN =================
 exports.login = async (req, res) => {
@@ -126,6 +230,7 @@ exports.login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        paymentStatus: user.paymentStatus,
       },
     });
 

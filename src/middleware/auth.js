@@ -37,6 +37,7 @@ module.exports = async (req, res, next) => {
       id: user._id.toString(),
       role: user.role,
       sessionId: decoded.sessionId,
+      paymentStatus: user.paymentStatus,
     };
 
     next();

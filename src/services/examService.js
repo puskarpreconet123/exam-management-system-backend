@@ -103,10 +103,13 @@ async function generateNewAttempt(exam, userId) {
     const mediumCount = Math.floor((exam.distribution.medium / 100) * sTotal);
     const hardCount = sTotal - easyCount - mediumCount;
 
+    const board = exam.board || 'General';
+    const examClass = exam.class || 'General';
+
     const [easy, medium, hard] = await Promise.all([
-      redis.srandmember(`questions:${s.subject}:easy`, easyCount),
-      redis.srandmember(`questions:${s.subject}:medium`, mediumCount),
-      redis.srandmember(`questions:${s.subject}:hard`, hardCount),
+      redis.srandmember(`questions:${board}:${examClass}:${s.subject}:easy`, easyCount),
+      redis.srandmember(`questions:${board}:${examClass}:${s.subject}:medium`, mediumCount),
+      redis.srandmember(`questions:${board}:${examClass}:${s.subject}:hard`, hardCount),
     ]);
     
     // Ensure we don't encounter errors if there are not enough questions
