@@ -368,15 +368,19 @@ exports.getAttemptResponse = async (req, res) => {
       const correctOptionMatch = q ? q.options.find(o => o.label === q.correctAnswer) : null;
       const correctText = correctOptionMatch ? correctOptionMatch.value : q.correctAnswer;
 
+      const autoCorrect = q ? correctLabel === selectedLabel : false;
+      const isOverridden = ans.isCorrectOverride !== null && ans.isCorrectOverride !== undefined;
+
       return {
         questionId: ans.questionId,
         questionText: q ? q.text : "Question Deleted",
         options: q ? q.options : [],
         selectedLabel: selectedLabel,
-        selectedOption: selectedText, // This matches what students saw
-        correctOption: correctText,     // This matches what students saw
+        selectedOption: selectedText,
+        correctOption: correctText,
         correctLabel: correctLabel,
-        isCorrect: q ? correctLabel === selectedLabel : false
+        isCorrect: isOverridden ? ans.isCorrectOverride : autoCorrect,
+        isOverridden,
       };
     });
 
@@ -392,6 +396,104 @@ exports.getAttemptResponse = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch attempt response" });
   }
 };
+/*
+|--------------------------------------------------------------------------
+| OVERRIDE INDIVIDUAL ANSWER CORRECTNESS
+|--------------------------------------------------------------------------
+*/
+exports.overrideAnswers = async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    // overrides: [{ questionId, isCorrect }]  — null isCorrect resets to auto
+    const { overrides } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(attemptId)) {
+      return res.status(400).json({ message: "Invalid attempt ID" });
+    }
+
+    if (!Array.isArray(overrides)) {
+      return res.status(400).json({ message: "overrides must be an array" });
+    }
+
+    const response = await ExamResponse.findOne({ attemptId });
+    if (!response) return res.status(404).json({ message: "Response not found" });
+
+    // Apply overrides to each answer subdocument
+    for (const { questionId, isCorrect } of overrides) {
+      const ans = response.answers.find(a => a.questionId.toString() === questionId.toString());
+      if (ans) {
+        ans.isCorrectOverride = isCorrect ?? null;
+      }
+    }
+    await response.save();
+
+    // Recalculate score: override wins; fall back to auto-eval
+    const questionIds = response.answers.map(a => a.questionId);
+    const questions = await Question.find({ _id: { $in: questionIds } });
+
+    let score = 0;
+    for (const ans of response.answers) {
+      const isOverridden = ans.isCorrectOverride !== null && ans.isCorrectOverride !== undefined;
+      if (isOverridden) {
+        if (ans.isCorrectOverride) score++;
+      } else {
+        const q = questions.find(q => q._id.toString() === ans.questionId.toString());
+        if (q) {
+          const raw = String(ans.selectedOption);
+          const optByLabel = q.options.find(o => o.label.toUpperCase() === raw.toUpperCase());
+          const optByValue = q.options.find(o => o.value === raw);
+          const optById = q.options.find(o => o._id.toString() === raw);
+          const selectedLabel = optByLabel?.label || optByValue?.label || optById?.label || raw;
+          if (q.correctAnswer === selectedLabel) score++;
+        }
+      }
+    }
+
+    await ExamAttempt.findByIdAndUpdate(attemptId, { score });
+
+    res.json({ message: "Overrides saved", score });
+  } catch (err) {
+    console.error("OverrideAnswers Error:", err);
+    res.status(500).json({ message: "Failed to save overrides" });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| UPDATE SCORE MANUALLY
+|--------------------------------------------------------------------------
+*/
+exports.updateScore = async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { score } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(attemptId)) {
+      return res.status(400).json({ message: "Invalid attempt ID" });
+    }
+
+    const parsed = Number(score);
+    if (score === undefined || score === null || isNaN(parsed) || parsed < 0) {
+      return res.status(400).json({ message: "Invalid score value" });
+    }
+
+    const attempt = await ExamAttempt.findByIdAndUpdate(
+      attemptId,
+      { score: parsed },
+      { new: true }
+    );
+
+    if (!attempt) {
+      return res.status(404).json({ message: "Attempt not found" });
+    }
+
+    res.json({ message: "Score updated successfully", score: attempt.score });
+  } catch (err) {
+    console.error("UpdateScore Error:", err);
+    res.status(500).json({ message: "Failed to update score" });
+  }
+};
+
 /*
 |--------------------------------------------------------------------------
 | GET ALL Active User

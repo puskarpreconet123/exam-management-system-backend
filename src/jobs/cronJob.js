@@ -22,7 +22,7 @@ exports.startFallbackCron = () => {
             attemptId: attempt._id,
             userId: attempt.userId.toString(),
             source: "cron"
-          });
+          }, { jobId: `submit_${attempt._id}` });
         } catch (err) {
           // ignore already queued
         }

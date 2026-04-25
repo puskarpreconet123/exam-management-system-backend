@@ -31,6 +31,10 @@ const examResponseSchema = new mongoose.Schema(
           type: String,
           required: true,
         },
+        isCorrectOverride: {
+          type: Boolean,
+          default: null,
+        },
       },
     ],
 

@@ -16,22 +16,15 @@ exports.createQuestion = async (req, res) => {
       subject,
       board = "General",
       class: className = "General",
+      type = "mcq",
+      imageUrl = null,
     } = req.body;
-    const correctAnswer = req.body.correctAnswer.toUpperCase()
 
-    // Basic validation
-    if (
-      !text ||
-      !Array.isArray(options) ||
-      options.length < 2 ||
-      !correctAnswer ||
-      !difficulty ||
-      !subject ||
-      !board ||
-      !className
-    ) {
+    const rawAnswer = req.body.correctAnswer;
+
+    if (!text || !rawAnswer || !difficulty || !subject) {
       return res.status(400).json({
-        message: "All fields (text, options, correctAnswer, difficulty, subject) are required",
+        message: "All fields (text, correctAnswer, difficulty, subject) are required",
       });
     }
 
@@ -41,22 +34,37 @@ exports.createQuestion = async (req, res) => {
       });
     }
 
-    // Validate options format
-    const optionLabels = options.map(o => o.label);
-    if (!optionLabels.includes(correctAnswer.toUpperCase())) {
-      return res.status(400).json({
-        message: "Correct answer must match one of the option values exactly",
-      });
+    if (!["mcq", "tita"].includes(type)) {
+      return res.status(400).json({ message: "Invalid type. Must be mcq or tita" });
+    }
+
+    let correctAnswer;
+
+    if (type === "mcq") {
+      if (!Array.isArray(options) || options.length < 2) {
+        return res.status(400).json({ message: "MCQ requires at least 2 options" });
+      }
+      correctAnswer = rawAnswer.toUpperCase();
+      const optionLabels = options.map(o => o.label);
+      if (!optionLabels.includes(correctAnswer)) {
+        return res.status(400).json({
+          message: "Correct answer must match one of the option labels (A, B, C, D)",
+        });
+      }
+    } else {
+      correctAnswer = rawAnswer.trim();
     }
 
     const question = await Question.create({
       text: text.trim(),
-      options,
+      type,
+      options: type === "tita" ? [] : options,
       correctAnswer,
       difficulty,
       subject: subject.trim(),
       board: board.trim(),
       class: className.trim(),
+      imageUrl: imageUrl || null,
     });
 
     // 🔥 Update Redis pool immediately
@@ -92,30 +100,38 @@ exports.bulkUploadQuestions = async (req, res) => {
 
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
+      const qType = q.type || "mcq";
+
       if (
         !q.text ||
-        !Array.isArray(q.options) ||
-        q.options.length < 2 ||
         !q.correctAnswer ||
         !["easy", "medium", "hard"].includes(q.difficulty) ||
-        !q.subject
+        !q.subject ||
+        !["mcq", "tita"].includes(qType)
       ) {
         return res.status(400).json({
-          message: `Question #${i + 1} is invalid. Ensure all fields (text, options, correctAnswer, difficulty, subject) are present.`,
+          message: `Question #${i + 1} is invalid. Ensure text, correctAnswer, difficulty, subject, and type are present.`,
         });
       }
 
-      // Assign defaults for bulk if not present
       if (!q.board) q.board = "General";
       if (!q.class) q.class = "General";
+      q.type = qType;
 
-      const optionLabels = q.options.map(o => o.label);
-
-      if (!optionLabels.includes(q.correctAnswer)) {
-        console.log(optionLabels);
-        return res.status(400).json({
-          message: `Question #${i + 1} Error: Correct answer "${q.correctAnswer}" must exist in the provided options values: [${optionLabels.join(', ')}]`,
-        });
+      if (qType === "mcq") {
+        if (!Array.isArray(q.options) || q.options.length < 2) {
+          return res.status(400).json({
+            message: `Question #${i + 1}: MCQ requires at least 2 options.`,
+          });
+        }
+        const optionLabels = q.options.map(o => o.label);
+        if (!optionLabels.includes(q.correctAnswer)) {
+          return res.status(400).json({
+            message: `Question #${i + 1}: Correct answer "${q.correctAnswer}" must match one of the option labels: [${optionLabels.join(", ")}]`,
+          });
+        }
+      } else {
+        q.options = [];
       }
     }
 

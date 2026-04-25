@@ -32,7 +32,7 @@ exports.startRedisExpiryListener = async () => {
             attemptId,
             userId: attempt.userId.toString(),
             source: "redis-expiration"
-          });
+          }, { jobId: `submit:${attemptId}` });
 
           console.log("Queued auto-submit via Redis:", attemptId);
 

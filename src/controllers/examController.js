@@ -36,16 +36,28 @@ exports.syncAnswers = async (req, res) => {
 
 exports.submitExam = async (req, res) => {
   try {
+    // Synchronously mark as submitted to prevent frontend redirect race conditions
+    const attempt = await ExamAttempt.findOneAndUpdate(
+      { _id: req.params.attemptId, status: "active", userId: req.user.id },
+      { $set: { status: "submitted", submittedAt: new Date() } }
+    );
+
+    if (!attempt) {
+      return res.status(200).json({ message: "Exam already submitted." });
+    }
+
     const { examQueue } = require("../queues/examQueue");
     
+    // Add to background queue to handle heavy scoring logic
     await examQueue.add("manual-submit", {
       attemptId: req.params.attemptId,
       userId: req.user.id,
       source: "manual"
-    });
+    }, { jobId: `submit_${req.params.attemptId}` });
 
     res.status(200).json({ message: "Exam submitted successfully. Your result is pending review." });
   } catch (err) {
+    require('fs').appendFileSync('error.log', new Date().toISOString() + ' submitExam error: ' + err.stack + '\n');
     res.status(400).json({ message: err.message });
   }
 };
@@ -248,19 +260,42 @@ exports.getDetailedResult = async (req, res) => {
     const questions = await Question.find({ _id: { $in: responseDoc.questionIds } }).lean();
 
     const answersMap = {};
+    const overrideMap = {};
     for (let ans of responseDoc.answers) {
       answersMap[ans.questionId.toString()] = ans.selectedOption;
+      if (ans.isCorrectOverride !== null && ans.isCorrectOverride !== undefined) {
+        overrideMap[ans.questionId.toString()] = ans.isCorrectOverride;
+      }
     }
 
     const detailedQuestions = responseDoc.questionIds.map(qid => {
       const q = questions.find(question => question._id.toString() === qid.toString());
       if (!q) return null;
+
+      const qIdStr = q._id.toString();
+      const userAnswer = answersMap[qIdStr] || null;
+      const isOverridden = qIdStr in overrideMap;
+
+      let autoCorrect;
+      if (q.options && q.options.length > 0) {
+        const raw = String(userAnswer || '');
+        const optByLabel = q.options.find(o => o.label === raw);
+        const optByValue = q.options.find(o => o.value === raw);
+        const optById = q.options.find(o => o._id?.toString() === raw);
+        const resolvedLabel = optByLabel?.label || optByValue?.label || optById?.label || raw;
+        autoCorrect = q.correctAnswer === resolvedLabel;
+      } else {
+        autoCorrect = userAnswer === q.correctAnswer;
+      }
+
       return {
         _id: q._id,
         text: q.text,
         options: q.options,
         correctAnswer: q.correctAnswer,
-        userAnswer: answersMap[q._id.toString()] || null
+        userAnswer,
+        isCorrect: isOverridden ? overrideMap[qIdStr] : autoCorrect,
+        isOverridden,
       };
     }).filter(Boolean);
 

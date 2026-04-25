@@ -9,6 +9,13 @@ const questionSchema = new mongoose.Schema(
       maxlength: 1000,
     },
 
+    type: {
+      type: String,
+      enum: ["mcq", "tita"],
+      default: "mcq",
+      required: true,
+    },
+
     options: {
       type: [
         {
@@ -17,8 +24,11 @@ const questionSchema = new mongoose.Schema(
         },
       ],
       validate: {
-        validator: (arr) => arr.length >= 2,
-        message: "At least 2 options required",
+        validator: function (arr) {
+          if (this.type === "tita") return true;
+          return arr.length >= 2;
+        },
+        message: "At least 2 options required for MCQ",
       },
     },
 
@@ -49,6 +59,11 @@ const questionSchema = new mongoose.Schema(
       required: true,
       default: "General",
     },
+
+    imageUrl: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -56,14 +71,13 @@ const questionSchema = new mongoose.Schema(
 // Compound index for fast question picking with board and class
 questionSchema.index({ board: 1, class: 1, subject: 1, difficulty: 1 });
 
-// Ensure correctAnswer matches options
+// For MCQ: correctAnswer must match one of the option labels
 questionSchema.pre("validate", async function () {
+  if (this.type === "tita") return;
   const optionLabels = this.options.map((o) => o.label);
-
   if (!optionLabels.includes(this.correctAnswer)) {
     throw new Error("correctAnswer must match one of the options");
   }
-
 });
 
 module.exports = mongoose.model("Question", questionSchema);

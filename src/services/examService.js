@@ -292,8 +292,10 @@ exports.submitExamService = async (attemptId, userId) => {
     if (!attempt) throw new Error("Attempt not found");
     if (attempt.userId.toString() !== userId)
       throw new Error("Unauthorized");
-    if (attempt.status !== "active")
-      throw new Error("Already submitted");
+    
+    // It could be 'submitted' manually from the controller or 'active' if caught by the cron
+    if (attempt.score !== null)
+      throw new Error("Already scored");
 
     const answerData = await redis.get(`answers:${attemptId}`);
     const answers = answerData ? JSON.parse(answerData) : {};
@@ -311,8 +313,14 @@ exports.submitExamService = async (attemptId, userId) => {
         score++;
     }
 
-    attempt.status = "submitted";
-    attempt.submittedAt = new Date();
+    // Mark as submitted if not already done by controller
+    if (attempt.status === "active") {
+        attempt.status = "submitted"; // fallback cron sets this
+    }
+    if (!attempt.submittedAt) {
+        attempt.submittedAt = new Date();
+    }
+    
     attempt.score = score;
     
     // Auto-publish if it's a Demo Exam

@@ -1,4 +1,5 @@
 const router = require("express").Router();
+const multer = require("multer");
 const auth = require("../middleware/auth");
 const role = require("../middleware/role");
 
@@ -7,6 +8,15 @@ const examCtrl = require("../controllers/admin/examController");
 const monitorCtrl = require("../controllers/admin/monitoringController");
 const referralCtrl = require("../controllers/admin/referralController");
 const userCtrl = require("../controllers/admin/userController");
+const uploadCtrl = require("../controllers/admin/uploadController");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+});
+
+// Image Upload
+router.post("/upload", auth, role("admin"), upload.single("image"), uploadCtrl.uploadImage);
 
 // Question Routes
 router.post("/questions", auth, role("admin"), questionCtrl.createQuestion);
@@ -21,6 +31,8 @@ router.get("/exams", auth, role("admin"), examCtrl.getExams);
 router.get("/exams/:examId/attempts", auth, role("admin"), examCtrl.getExamAttempts);
 router.get("/exams/attempt-response/:attemptId", auth, role("admin"), examCtrl.getAttemptResponse);
 router.patch("/exams/evaluate/:attemptId", auth, role("admin"), examCtrl.evaluateAttempt);
+router.patch("/exams/update-score/:attemptId", auth, role("admin"), examCtrl.updateScore);
+router.patch("/exams/override-answers/:attemptId", auth, role("admin"), examCtrl.overrideAnswers);
 router.patch("/exams/publish-result/:attemptId", auth, role("admin"), examCtrl.publishResult);
 
 // Monitoring

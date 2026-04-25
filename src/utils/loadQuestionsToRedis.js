@@ -7,14 +7,16 @@ const loadQuestionsToRedis = async () => {
 
     // 1️⃣ Single DB query
     const questions = await Question.find({})
-      .select("_id difficulty subject")
+      .select("_id difficulty subject board class")
       .lean();
 
     const grouped = {};
 
     for (let q of questions) {
       if (!q.subject) continue;
-      const key = `${q.subject}:${q.difficulty}`;
+      const board = q.board || "General";
+      const cls = q.class || "General";
+      const key = `${board}:${cls}:${q.subject}:${q.difficulty}`;
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(q._id.toString());
     }

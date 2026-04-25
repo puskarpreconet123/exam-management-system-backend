@@ -38,8 +38,9 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    // 5️⃣ Expiration check
-    if (new Date() > attempt.expiresAt) {
+    // 5️⃣ Expiration check with a 5-minute grace period for auto-submit & network latency
+    const gracePeriodMs = 5 * 60 * 1000;
+    if (new Date().getTime() > attempt.expiresAt.getTime() + gracePeriodMs) {
       return res.status(400).json({
         message: "Exam time expired",
       });
