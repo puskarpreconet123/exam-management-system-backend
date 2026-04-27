@@ -374,6 +374,7 @@ exports.getAttemptResponse = async (req, res) => {
       return {
         questionId: ans.questionId,
         questionText: q ? q.text : "Question Deleted",
+        questionImageUrl: q ? (q.imageUrl || null) : null,
         options: q ? q.options : [],
         selectedLabel: selectedLabel,
         selectedOption: selectedText,

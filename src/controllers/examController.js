@@ -293,6 +293,7 @@ exports.getDetailedResult = async (req, res) => {
         text: q.text,
         options: q.options,
         correctAnswer: q.correctAnswer,
+        imageUrl: q.imageUrl || null,
         userAnswer,
         isCorrect: isOverridden ? overrideMap[qIdStr] : autoCorrect,
         isOverridden,

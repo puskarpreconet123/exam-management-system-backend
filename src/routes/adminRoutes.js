@@ -24,6 +24,8 @@ router.post("/questions/bulk", auth, role("admin"), questionCtrl.bulkUploadQuest
 router.get("/questions/summary", auth, role("admin"), questionCtrl.getQuestionSummary);
 router.get("/questions/by-group", auth, role("admin"), questionCtrl.getQuestionsByGroup);
 router.get("/questions", auth, role("admin"), questionCtrl.getQuestions);
+router.patch("/questions/:id", auth, role("admin"), questionCtrl.updateQuestion);
+router.delete("/questions/:id", auth, role("admin"), questionCtrl.deleteQuestion);
 
 // Exam Routes
 router.post("/exams", auth, role("admin"), examCtrl.createExam);

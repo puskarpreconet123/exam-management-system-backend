@@ -250,6 +250,138 @@ exports.getQuestionSummary = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| UPDATE QUESTION
+|--------------------------------------------------------------------------
+*/
+exports.updateQuestion = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid question ID" });
+    }
+
+    const existing = await Question.findById(id);
+    if (!existing) {
+      return res.status(404).json({ message: "Question not found" });
+    }
+
+    const {
+      text,
+      options,
+      difficulty,
+      subject,
+      board,
+      class: className,
+      type,
+      imageUrl,
+    } = req.body;
+
+    const rawAnswer = req.body.correctAnswer;
+
+    if (!text || !rawAnswer || !difficulty || !subject || !type) {
+      return res.status(400).json({
+        message: "All fields (text, correctAnswer, difficulty, subject, type) are required",
+      });
+    }
+
+    if (!["easy", "medium", "hard"].includes(difficulty)) {
+      return res.status(400).json({ message: "Invalid difficulty. Must be easy, medium, or hard" });
+    }
+
+    if (!["mcq", "tita"].includes(type)) {
+      return res.status(400).json({ message: "Invalid type. Must be mcq or tita" });
+    }
+
+    let correctAnswer;
+    let finalOptions;
+
+    if (type === "mcq") {
+      if (!Array.isArray(options) || options.length < 2) {
+        return res.status(400).json({ message: "MCQ requires at least 2 options" });
+      }
+      correctAnswer = rawAnswer.toUpperCase();
+      const optionLabels = options.map(o => o.label);
+      if (!optionLabels.includes(correctAnswer)) {
+        return res.status(400).json({
+          message: "Correct answer must match one of the option labels (A, B, C, D)",
+        });
+      }
+      finalOptions = options;
+    } else {
+      correctAnswer = rawAnswer.trim();
+      finalOptions = [];
+    }
+
+    const newBoard = (board || "General").trim();
+    const newClass = (className || "General").trim();
+    const newSubject = subject.trim();
+
+    // Capture the old Redis pool key before mutating
+    const oldKey = `questions:${existing.board}:${existing.class}:${existing.subject}:${existing.difficulty}`;
+    const newKey = `questions:${newBoard}:${newClass}:${newSubject}:${difficulty}`;
+
+    existing.text = text.trim();
+    existing.type = type;
+    existing.options = finalOptions;
+    existing.correctAnswer = correctAnswer;
+    existing.difficulty = difficulty;
+    existing.subject = newSubject;
+    existing.board = newBoard;
+    existing.class = newClass;
+    existing.imageUrl = imageUrl || null;
+
+    await existing.save();
+
+    // Sync Redis pool: move ID from old bucket to new bucket only if categorisation changed
+    if (oldKey !== newKey) {
+      await redis.srem(oldKey, existing._id.toString());
+      await redis.sadd(newKey, existing._id.toString());
+    }
+
+    res.json({
+      message: "Question updated successfully",
+      question: existing,
+    });
+
+  } catch (err) {
+    console.error("UpdateQuestion Error:", err);
+    res.status(500).json({ message: "Failed to update question" });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| DELETE QUESTION
+|--------------------------------------------------------------------------
+*/
+exports.deleteQuestion = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid question ID" });
+    }
+
+    const question = await Question.findById(id);
+    if (!question) {
+      return res.status(404).json({ message: "Question not found" });
+    }
+
+    const key = `questions:${question.board}:${question.class}:${question.subject}:${question.difficulty}`;
+    await Question.deleteOne({ _id: id });
+    await redis.srem(key, id.toString());
+
+    res.json({ message: "Question deleted successfully" });
+
+  } catch (err) {
+    console.error("DeleteQuestion Error:", err);
+    res.status(500).json({ message: "Failed to delete question" });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | GET QUESTIONS BY GROUP (Lazy-Load for a specific subject + difficulty)
 |--------------------------------------------------------------------------
 */
