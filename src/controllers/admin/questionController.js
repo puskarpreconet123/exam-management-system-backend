@@ -34,13 +34,13 @@ exports.createQuestion = async (req, res) => {
       });
     }
 
-    if (!["mcq", "tita"].includes(type)) {
-      return res.status(400).json({ message: "Invalid type. Must be mcq or tita" });
+    if (!["mcq", "tita", "mcq_image"].includes(type)) {
+      return res.status(400).json({ message: "Invalid type. Must be mcq, tita, or mcq_image" });
     }
 
     let correctAnswer;
 
-    if (type === "mcq") {
+    if (type === "mcq" || type === "mcq_image") {
       if (!Array.isArray(options) || options.length < 2) {
         return res.status(400).json({ message: "MCQ requires at least 2 options" });
       }
@@ -107,7 +107,7 @@ exports.bulkUploadQuestions = async (req, res) => {
         !q.correctAnswer ||
         !["easy", "medium", "hard"].includes(q.difficulty) ||
         !q.subject ||
-        !["mcq", "tita"].includes(qType)
+        !["mcq", "tita", "mcq_image"].includes(qType)
       ) {
         return res.status(400).json({
           message: `Question #${i + 1} is invalid. Ensure text, correctAnswer, difficulty, subject, and type are present.`,
@@ -118,7 +118,7 @@ exports.bulkUploadQuestions = async (req, res) => {
       if (!q.class) q.class = "General";
       q.type = qType;
 
-      if (qType === "mcq") {
+      if (qType === "mcq" || qType === "mcq_image") {
         if (!Array.isArray(q.options) || q.options.length < 2) {
           return res.status(400).json({
             message: `Question #${i + 1}: MCQ requires at least 2 options.`,
@@ -289,14 +289,14 @@ exports.updateQuestion = async (req, res) => {
       return res.status(400).json({ message: "Invalid difficulty. Must be easy, medium, or hard" });
     }
 
-    if (!["mcq", "tita"].includes(type)) {
-      return res.status(400).json({ message: "Invalid type. Must be mcq or tita" });
+    if (!["mcq", "tita", "mcq_image"].includes(type)) {
+      return res.status(400).json({ message: "Invalid type. Must be mcq, tita, or mcq_image" });
     }
 
     let correctAnswer;
     let finalOptions;
 
-    if (type === "mcq") {
+    if (type === "mcq" || type === "mcq_image") {
       if (!Array.isArray(options) || options.length < 2) {
         return res.status(400).json({ message: "MCQ requires at least 2 options" });
       }

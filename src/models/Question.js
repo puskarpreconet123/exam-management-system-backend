@@ -11,7 +11,7 @@ const questionSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ["mcq", "tita"],
+      enum: ["mcq", "tita", "mcq_image"],
       default: "mcq",
       required: true,
     },

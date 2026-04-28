@@ -291,6 +291,7 @@ exports.getDetailedResult = async (req, res) => {
       return {
         _id: q._id,
         text: q.text,
+        type: q.type,
         options: q.options,
         correctAnswer: q.correctAnswer,
         imageUrl: q.imageUrl || null,
