@@ -6,6 +6,7 @@ const compression = require("compression");
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const examRoutes = require("./routes/examRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 const app = express();
 
@@ -34,6 +35,8 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/exam", examRoutes);
+app.use("/api/notifications", notificationRoutes);
+
 
 // 404 Handler
 app.use((req, res) => {

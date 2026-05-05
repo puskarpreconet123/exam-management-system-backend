@@ -5,6 +5,7 @@ const User = require("../../models/User");
 const { redis } = require("../../config/redis");
 const ExamResponse = require("../../models/ExamResponse");
 const Question = require("../../models/Question");
+const notificationService = require("../../services/notificationService");
 /*
 |--------------------------------------------------------------------------
 | CREATE EXAM
@@ -116,6 +117,26 @@ exports.createExam = async (req, res) => {
       exam,
     });
 
+    // ✨ Notifications
+    const boardStr = board || "General";
+    const classStr = className || "General";
+
+    // 1. Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Exam Created",
+      `Exam "${title}" has been successfully created for ${boardStr} ${classStr}.`,
+      "success"
+    );
+
+    // 2. Notify Target Students
+    await notificationService.notifyStudentsByCriteria(
+      { board: boardStr, class: classStr },
+      "New Exam Published",
+      `A new exam "${title}" has been published. Check your upcoming exams!`,
+      "info"
+    );
+
   } catch (err) {
     console.error("CreateExam Error:", err);
     res.status(500).json({
@@ -141,17 +162,60 @@ exports.getExams = async (req, res) => {
       .lean();
 
     const total = await Exam.countDocuments();
+    const now = new Date();
 
-    res.json({
-      data: exams,
-      currentPage: page,
-      totalPages: Math.ceil(total / limit),
-      totalRecords: total,
+    // Calculate basic stats for the dashboard
+    const liveCount = await Exam.countDocuments({
+        startTime: { $lte: now },
+        $or: [
+            { endTime: { $exists: false } }, // fixed type might not have endTime in model sometimes
+            { endTime: { $gte: now } }
+        ]
     });
 
+    const upcomingCount = await Exam.countDocuments({
+        startTime: { $gt: now }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: exams,
+      stats: {
+          total,
+          live: liveCount,
+          upcoming: upcomingCount,
+          completed: total - liveCount - upcomingCount
+      },
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+      },
+    });
   } catch (err) {
     console.error("GetExams Error:", err);
-    res.status(500).json({ message: "Failed to fetch exams" });
+    res.status(500).json({
+      message: "Failed to fetch exams",
+    });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET SIMPLE EXAMS LIST (For dropdowns)
+|--------------------------------------------------------------------------
+*/
+exports.getSimpleExamsList = async (req, res) => {
+  try {
+    const exams = await Exam.find()
+      .select("title")
+      .sort({ createdAt: -1 })
+      .lean();
+    
+    res.json(exams);
+  } catch (err) {
+    console.error("GetSimpleExamsList Error:", err);
+    res.status(500).json({ message: "Failed to fetch simple exams list" });
   }
 };
 
@@ -224,6 +288,18 @@ exports.publishResult = async (req, res) => {
       message: "Result published successfully",
       attempt,
     });
+
+    // ✨ Notify Student
+    if (attempt.userId) {
+      // Fetch exam title for better message
+      const exam = await Exam.findById(attempt.examId).select("title").lean();
+      await notificationService.notifyUser(
+        attempt.userId,
+        "Result Published",
+        `Your result for exam "${exam?.title || 'Unknown'}" has been published.`,
+        "success"
+      );
+    }
   } catch (err) {
     console.error("PublishResult Error:", err);
     res.status(500).json({ message: "Failed to publish result" });
@@ -497,6 +573,248 @@ exports.updateScore = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| EVALUATE ALL ATTEMPTS FOR AN EXAM
+|--------------------------------------------------------------------------
+*/
+exports.evaluateAllAttempts = async (req, res) => {
+  try {
+    const { examId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(examId)) {
+      return res.status(400).json({ message: "Invalid exam ID" });
+    }
+
+    // 1. Get all submitted/timeout attempts with null score
+    const attempts = await ExamAttempt.find({
+      examId,
+      status: { $in: ["submitted", "timeout"] },
+      score: null
+    });
+
+    if (attempts.length === 0) {
+      return res.json({ message: "No pending attempts to evaluate", count: 0 });
+    }
+
+    const attemptIds = attempts.map(a => a._id);
+
+    // 2. Get all responses for these attempts to collect question IDs
+    const responses = await ExamResponse.find({ attemptId: { $in: attemptIds } });
+    
+    // 3. Collect all unique question IDs
+    const questionIdSet = new Set();
+    responses.forEach(r => {
+      if (r.answers) {
+        r.answers.forEach(ans => {
+          if (ans.questionId) questionIdSet.add(ans.questionId.toString());
+        });
+      }
+    });
+
+    // 4. Fetch all questions at once
+    const questions = await Question.find({ _id: { $in: Array.from(questionIdSet) } });
+    const questionMap = new Map(questions.map(q => [q._id.toString(), q]));
+
+    let evaluatedCount = 0;
+
+    // 5. Evaluate each attempt
+    for (const attempt of attempts) {
+      const response = responses.find(r => r.attemptId.toString() === attempt._id.toString());
+      if (!response || !response.answers) continue;
+      
+      let score = 0;
+      response.answers.forEach(answer => {
+        // Admin Overrides
+        if (answer.isCorrectOverride === true) {
+          score++;
+          return;
+        }
+        if (answer.isCorrectOverride === false) {
+          return;
+        }
+
+        const question = questionMap.get(answer.questionId.toString());
+        if (question) {
+          const raw = String(answer.selectedOption || "");
+          
+          if (question.type === "tita") {
+            if (question.correctAnswer.trim().toLowerCase() === raw.trim().toLowerCase()) {
+              score++;
+            }
+          } else {
+            // MCQ / MCQ_IMAGE
+            const optionByLabel = question.options.find(o => o.label.toUpperCase() === raw.toUpperCase());
+            const optionByValue = question.options.find(o => o.value === raw);
+            const optionById = question.options.find(o => o._id && o._id.toString() === raw);
+            
+            const selectedLabel = optionByLabel?.label || optionByValue?.label || optionById?.label || null;
+            if (question.correctAnswer === selectedLabel) {
+              score++;
+            }
+
+          }
+        }
+      });
+      
+      attempt.score = score;
+      await attempt.save();
+      evaluatedCount++;
+    }
+
+    res.json({
+      message: `Successfully evaluated ${evaluatedCount} attempts`,
+      count: evaluatedCount
+    });
+
+  } catch (err) {
+    console.error("EvaluateAllAttempts Error:", err);
+    res.status(500).json({ message: "Failed to evaluate attempts" });
+  }
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| PUBLISH ALL RESULTS FOR AN EXAM
+|--------------------------------------------------------------------------
+*/
+exports.publishAllResults = async (req, res) => {
+  try {
+    const { examId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(examId)) {
+      return res.status(400).json({ message: "Invalid exam ID" });
+    }
+
+    // Publish all attempts for this exam that have a score and are not yet published
+    const result = await ExamAttempt.updateMany(
+      { examId, score: { $ne: null }, isPublished: false },
+      { $set: { isPublished: true } }
+    );
+
+    res.json({
+      message: `Successfully published ${result.modifiedCount} results`,
+      count: result.modifiedCount
+    });
+
+    // Optional: Notify students (maybe in background to avoid blocking)
+    // For now, we'll skip detailed individual notifications in bulk to save resources
+    // or just notify the admin that it's done.
+
+  } catch (err) {
+    console.error("PublishAllResults Error:", err);
+    res.status(500).json({ message: "Failed to publish results" });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET DASHBOARD STATISTICS
+|--------------------------------------------------------------------------
+*/
+exports.getDashboardStats = async (req, res) => {
+  try {
+    const now = new Date();
+    
+    // 1. Basic Stats
+    const totalExams = await Exam.countDocuments();
+    const upcomingExams = await Exam.countDocuments({ startTime: { $gt: now } });
+    const totalStudents = await User.countDocuments({ role: "student" });
+    const totalQuestions = await Question.countDocuments();
+    
+    // 2. Pending Evaluations (Submitted/Timeout attempts with null score)
+    const pendingEvaluations = await ExamAttempt.countDocuments({
+      status: { $in: ["submitted", "timeout"] },
+      score: null
+    });
+
+    // 3. Average Pass Rate
+    // Let's get attempts that HAVE a score and join with Exam to get totalQuestions
+    const attemptsWithScore = await ExamAttempt.aggregate([
+      { $match: { score: { $ne: null } } },
+      {
+        $lookup: {
+          from: "exams",
+          localField: "examId",
+          foreignField: "_id",
+          as: "exam"
+        }
+      },
+      { $unwind: "$exam" },
+      {
+        $project: {
+          percentage: {
+            $multiply: [{ $divide: ["$score", "$exam.totalQuestions"] }, 100]
+          }
+        }
+      }
+    ]);
+
+    const avgPassRate = attemptsWithScore.length > 0 
+      ? (attemptsWithScore.reduce((sum, a) => sum + a.percentage, 0) / attemptsWithScore.length).toFixed(1)
+      : 0;
+
+    // 4. Exam Completion Distribution
+    const completionStats = await ExamAttempt.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const distribution = {
+      completed: 0,
+      pending: 0,
+      failed: 0, // We can define failed as score < 40% if we want
+      excused: 0 // placeholder
+    };
+
+    completionStats.forEach(s => {
+      if (s._id === "submitted") distribution.completed = s.count;
+      if (s._id === "active") distribution.pending = s.count;
+      // timeout could be failed or completed depending on policy, let's put in completed for now if evaluated
+    });
+
+    // 5. Usage Statistics (Attempts per month for last 12 months)
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 11);
+    twelveMonthsAgo.setDate(1);
+
+    const usageStats = await ExamAttempt.aggregate([
+      { $match: { createdAt: { $gt: twelveMonthsAgo } } },
+      {
+        $group: {
+          _id: { 
+            month: { $month: "$createdAt" }, 
+            year: { $year: "$createdAt" } 
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } }
+    ]);
+
+    res.status(200).json({
+      totalExams,
+      upcomingExams,
+      totalStudents,
+      totalQuestions,
+      pendingEvaluations,
+      avgPassRate: Number(avgPassRate),
+      distribution,
+      usageStats,
+      upcomingExamsList: await Exam.find({ startTime: { $gt: now } }).sort({ startTime: 1 }).limit(4).lean()
+    });
+
+  } catch (error) {
+    console.error("DashboardStats Error:", error.message);
+    res.status(500).json({ message: "Failed to fetch dashboard statistics" });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | GET ALL Active User
 |--------------------------------------------------------------------------
 */
@@ -520,5 +838,125 @@ exports.getTotalUserNo = async (req, res) => {
   } catch (error) {
     console.log("Error while fetching total user count:", error.message);
     res.status(500).json({ message: error.message });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| UPDATE EXAM
+|--------------------------------------------------------------------------
+*/
+exports.updateExam = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      totalQuestions,
+      difficultyDistribution,
+      durationMinutes,
+      startTime,
+      schedulingType,
+      endTime,
+      subjects,
+      board,
+      class: className,
+    } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid exam ID" });
+    }
+
+    const updateData = {};
+    if (title) updateData.title = title.trim();
+    if (board) updateData.board = board.trim();
+    if (className) updateData.class = className.trim();
+    if (schedulingType) updateData.schedulingType = schedulingType;
+    if (startTime) updateData.startTime = new Date(startTime);
+    if (endTime) updateData.endTime = new Date(endTime);
+    
+    if (subjects) {
+        updateData.subjects = subjects.map(s => ({
+            subject: s.subject,
+            count: Number(s.count)
+        }));
+        updateData.totalQuestions = updateData.subjects.reduce((sum, s) => sum + s.count, 0);
+    }
+
+    if (difficultyDistribution) {
+        updateData.distribution = {
+            easy: Number(difficultyDistribution.easy || 0),
+            medium: Number(difficultyDistribution.medium || 0),
+            hard: Number(difficultyDistribution.hard || 0)
+        };
+        
+        if (updateData.distribution.easy + updateData.distribution.medium + updateData.distribution.hard !== 100) {
+            return res.status(400).json({ message: "Difficulty distribution must total 100%" });
+        }
+    }
+
+    if (durationMinutes) {
+        updateData.duration = Number(durationMinutes);
+    }
+
+    const exam = await Exam.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    res.json({ message: "Exam updated successfully", exam });
+
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Exam Updated",
+      `Exam "${exam.title}" has been updated.`,
+      "info"
+    );
+  } catch (err) {
+    console.error("UpdateExam Error:", err);
+    res.status(500).json({ message: err.message || "Failed to update exam" });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| DELETE EXAM
+|--------------------------------------------------------------------------
+*/
+exports.deleteExam = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid exam ID" });
+    }
+
+    // Check if there are any attempts for this exam
+    const attemptsCount = await ExamAttempt.countDocuments({ examId: id });
+    if (attemptsCount > 0) {
+        return res.status(400).json({ 
+            message: "Cannot delete exam with existing attempts. Archive it instead or contact support." 
+        });
+    }
+
+    const exam = await Exam.findByIdAndDelete(id);
+
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    res.json({ message: "Exam deleted successfully" });
+
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Exam Deleted",
+      `Exam "${exam.title}" has been deleted.`,
+      "warning"
+    );
+  } catch (err) {
+    console.error("DeleteExam Error:", err);
+    res.status(500).json({ message: "Failed to delete exam" });
   }
 };

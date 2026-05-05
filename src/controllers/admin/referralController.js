@@ -1,4 +1,5 @@
 const Referral = require("../../models/Referral");
+const notificationService = require("../../services/notificationService");
 
 exports.createReferral = async (req, res) => {
   try {
@@ -29,6 +30,14 @@ exports.createReferral = async (req, res) => {
       message: "Referral code created successfully", 
       referral: newReferral 
     });
+
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Referral Created",
+      `Referral code "${newReferral.code}" has been created for ${newReferral.schoolName}.`,
+      "success"
+    );
   } catch (error) {
     console.error("Error creating referral:", error);
     res.status(500).json({ message: "Server Error", error: error.message });

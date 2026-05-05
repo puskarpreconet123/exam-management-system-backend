@@ -5,6 +5,7 @@ const User = require("../models/User");
 const Referral = require("../models/Referral");
 const { redis } = require("../config/redis");
 const otpService = require("../utils/otpService");
+const notificationService = require("../services/notificationService");
 
 // ================= SEND OTP =================
 exports.sendOtp = async (req, res) => {
@@ -140,6 +141,14 @@ exports.register = async (req, res) => {
       }
     });
 
+    // ✨ Welcome Notification
+    await notificationService.notifyUser(
+      user._id,
+      "Welcome!",
+      `Hello ${user.name}, welcome to the ${process.env.APP_TITLE || 'Exam Portal'}!`,
+      "success"
+    );
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -230,6 +239,7 @@ exports.login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        permissions: user.permissions || [],
         paymentStatus: user.paymentStatus,
       },
     });

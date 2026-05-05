@@ -5,6 +5,7 @@ const ExamAttempt = require("../models/ExamAttempt");
 const ExamResponse = require("../models/ExamResponse");
 const Question = require("../models/Question");
 const suspiciousService = require("../services/sucpiciousService");
+const notificationService = require("../services/notificationService");
 
 exports.startExam = async (req, res) => {
   try {
@@ -56,6 +57,16 @@ exports.submitExam = async (req, res) => {
     }, { jobId: `submit_${req.params.attemptId}` });
 
     res.status(200).json({ message: "Exam submitted successfully. Your result is pending review." });
+
+    // ✨ Persistent Notification
+    // Fetch exam title for better message
+    const exam = await Exam.findById(attempt.examId).select("title").lean();
+    await notificationService.notifyUser(
+      req.user.id,
+      "Exam Submitted",
+      `Your exam "${exam?.title || 'Unknown'}" has been submitted successfully.`,
+      "success"
+    );
   } catch (err) {
     require('fs').appendFileSync('error.log', new Date().toISOString() + ' submitExam error: ' + err.stack + '\n');
     res.status(400).json({ message: err.message });

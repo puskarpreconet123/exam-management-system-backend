@@ -299,19 +299,7 @@ exports.submitExamService = async (attemptId, userId) => {
 
     const answerData = await redis.get(`answers:${attemptId}`);
     const answers = answerData ? JSON.parse(answerData) : {};
-
     const questionIds = Object.keys(answers);
-
-    const questions = await Question.find({
-      _id: { $in: questionIds },
-    }).session(session);
-
-    let score = 0;
-
-    for (let q of questions) {
-      if (answers[q._id.toString()] === q.correctAnswer)
-        score++;
-    }
 
     // Mark as submitted if not already done by controller
     if (attempt.status === "active") {
@@ -321,14 +309,43 @@ exports.submitExamService = async (attemptId, userId) => {
         attempt.submittedAt = new Date();
     }
     
-    attempt.score = score;
-    
-    // Auto-publish if it's a Demo Exam
+    // Demo exams are auto-evaluated and published immediately
     if (attempt.isDemo) {
-      attempt.isPublished = true;
+        const responseDoc = await ExamResponse.findOne({ attemptId }).session(session);
+        if (responseDoc && responseDoc.questionIds) {
+            const questions = await Question.find({ _id: { $in: responseDoc.questionIds } }).session(session);
+            let score = 0;
+            
+            responseDoc.questionIds.forEach(qid => {
+                const qIdStr = qid.toString();
+                const q = questions.find(query => query._id.toString() === qIdStr);
+                if (q) {
+                    const selected = answers[qIdStr];
+                    if (selected) {
+                        const raw = String(selected);
+                        if (q.type === "tita") {
+                            if (q.correctAnswer.trim().toLowerCase() === raw.trim().toLowerCase()) score++;
+                        } else {
+                            const optionByLabel = q.options.find(o => o.label.toUpperCase() === raw.toUpperCase());
+                            const optionByValue = q.options.find(o => o.value === raw);
+                            const optionById = q.options.find(o => o._id && o._id.toString() === raw);
+                            
+                            const selectedLabel = optionByLabel?.label || optionByValue?.label || optionById?.label || null;
+                            if (q.correctAnswer === selectedLabel) score++;
+                        }
+                    }
+                }
+            });
+            attempt.score = score;
+            attempt.isPublished = true;
+        }
+    } else {
+        // Standard exams: Score remains null until calculated by admin
+        attempt.score = null;
     }
 
     await attempt.save({ session });
+
 
     await ExamResponse.updateOne(
       { attemptId },
@@ -350,7 +367,12 @@ exports.submitExamService = async (attemptId, userId) => {
     await redis.del(`answers:${attemptId}`);
     await redis.del(lockKey);
 
-    return { message: "Exam submitted successfully. Your result is pending review." };
+    const message = attempt.isDemo 
+      ? `Demo exam submitted. Your score: ${attempt.score}`
+      : "Exam submitted successfully. Your result is pending review.";
+
+    return { message, score: attempt.score };
+
 
   } catch (err) {
     await session.abortTransaction();

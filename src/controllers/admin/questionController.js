@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Question = require("../../models/Question");
 const { redis } = require("../../config/redis");
+const notificationService = require("../../services/notificationService");
 
 /*
 |--------------------------------------------------------------------------
@@ -74,6 +75,14 @@ exports.createQuestion = async (req, res) => {
       message: "Question created successfully",
       question,
     });
+    
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Question Created",
+      `New question created for ${subject} (${difficulty}).`,
+      "success"
+    );
 
   } catch (err) {
     console.error("CreateQuestion Error:", err);
@@ -156,6 +165,14 @@ exports.bulkUploadQuestions = async (req, res) => {
       message: "Questions uploaded successfully",
       count: inserted.length,
     });
+
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Bulk Upload Success",
+      `${inserted.length} questions have been successfully uploaded.`,
+      "success"
+    );
 
   } catch (err) {
     console.error("BulkUpload Error:", err.message);
@@ -344,6 +361,14 @@ exports.updateQuestion = async (req, res) => {
       question: existing,
     });
 
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Question Updated",
+      `Question "${existing.text.substring(0, 30)}..." has been updated.`,
+      "info"
+    );
+
   } catch (err) {
     console.error("UpdateQuestion Error:", err);
     res.status(500).json({ message: "Failed to update question" });
@@ -373,6 +398,14 @@ exports.deleteQuestion = async (req, res) => {
     await redis.srem(key, id.toString());
 
     res.json({ message: "Question deleted successfully" });
+
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Question Deleted",
+      `Question "${question.text.substring(0, 30)}..." has been deleted.`,
+      "warning"
+    );
 
   } catch (err) {
     console.error("DeleteQuestion Error:", err);

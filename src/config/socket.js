@@ -28,6 +28,11 @@ const initSocket = (server) => {
             console.log(`Socket ${socket.id} joined exam room: exam_${attemptId}`);
         });
 
+        socket.on("join_user_room", (userId) => {
+            socket.join(`user_${userId}`);
+            console.log(`Socket ${socket.id} joined user room: user_${userId}`);
+        });
+
         socket.on("disconnect", () => {
             console.log("Client disconnected:", socket.id);
         });

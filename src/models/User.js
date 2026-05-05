@@ -22,8 +22,12 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["admin", "student"],
+      enum: ["admin", "student", "employee"],
       default: "student",
+    },
+    permissions: {
+      type: [String],
+      default: [],
     },
     
     // Verification Flags

@@ -36,6 +36,7 @@ module.exports = async (req, res, next) => {
     req.user = {
       id: user._id.toString(),
       role: user.role,
+      permissions: user.permissions || [],
       sessionId: decoded.sessionId,
       paymentStatus: user.paymentStatus,
     };
