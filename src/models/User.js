@@ -80,9 +80,25 @@ const userSchema = new mongoose.Schema(
     transactionId: String,
 
     // Referral
-    usedReferralCode: String
+    usedReferralCode: String,
+
+    // Employee Specifics
+    employeeId: {
+      type: String,
+      unique: true,
+      sparse: true
+    }
   },
   { timestamps: true }
 );
+
+// Auto-generate employeeId for new employees
+userSchema.pre("save", async function () {
+  if (this.role === "employee" && !this.employeeId) {
+    const count = await mongoose.model("User").countDocuments({ role: "employee" });
+    const random = Math.floor(1000 + Math.random() * 9000); // 4 digit random
+    this.employeeId = `EMP-${count + 1}${random}`;
+  }
+});
 
 module.exports = mongoose.model("User", userSchema);

@@ -6,6 +6,7 @@ const { redis } = require("../../config/redis");
 const ExamResponse = require("../../models/ExamResponse");
 const Question = require("../../models/Question");
 const notificationService = require("../../services/notificationService");
+const actionLogService = require("../../services/actionLogService");
 /*
 |--------------------------------------------------------------------------
 | CREATE EXAM
@@ -135,6 +136,15 @@ exports.createExam = async (req, res) => {
       "New Exam Published",
       `A new exam "${title}" has been published. Check your upcoming exams!`,
       "info"
+    );
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "CREATE_EXAM",
+      exam._id.toString(),
+      "Exam",
+      { title: exam.title, board: exam.board, class: exam.class }
     );
 
   } catch (err) {
@@ -913,6 +923,15 @@ exports.updateExam = async (req, res) => {
       `Exam "${exam.title}" has been updated.`,
       "info"
     );
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "UPDATE_EXAM",
+      id,
+      "Exam",
+      { title: exam.title }
+    );
   } catch (err) {
     console.error("UpdateExam Error:", err);
     res.status(500).json({ message: err.message || "Failed to update exam" });
@@ -954,6 +973,15 @@ exports.deleteExam = async (req, res) => {
       "Exam Deleted",
       `Exam "${exam.title}" has been deleted.`,
       "warning"
+    );
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "DELETE_EXAM",
+      id,
+      "Exam",
+      { title: exam.title }
     );
   } catch (err) {
     console.error("DeleteExam Error:", err);

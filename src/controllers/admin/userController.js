@@ -1,6 +1,7 @@
 const User = require("../../models/User");
 const ExamAttempt = require("../../models/ExamAttempt");
 const notificationService = require("../../services/notificationService");
+const actionLogService = require("../../services/actionLogService");
 
 // @desc    Get all users with pagination and search
 exports.getUsers = async (req, res) => {
@@ -109,6 +110,15 @@ exports.updateUser = async (req, res) => {
         "info"
       );
     }
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "UPDATE_USER",
+      id,
+      "User",
+      { name: user.name, email: user.email, role: user.role }
+    );
   } catch (error) {
     console.error("Error updating user:", error);
     if (error.code === 11000) {
@@ -141,6 +151,15 @@ exports.deleteUser = async (req, res) => {
       "User Deleted",
       `User ${user.name} (${user.email}) has been deleted along with their attempts.`,
       "warning"
+    );
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "DELETE_USER",
+      id,
+      "User",
+      { name: user.name, email: user.email, role: user.role }
     );
   } catch (error) {
     console.error("Error deleting user:", error);

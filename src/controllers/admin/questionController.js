@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Question = require("../../models/Question");
 const { redis } = require("../../config/redis");
 const notificationService = require("../../services/notificationService");
+const actionLogService = require("../../services/actionLogService");
 
 /*
 |--------------------------------------------------------------------------
@@ -82,6 +83,15 @@ exports.createQuestion = async (req, res) => {
       "Question Created",
       `New question created for ${subject} (${difficulty}).`,
       "success"
+    );
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "CREATE_QUESTION",
+      question._id.toString(),
+      "Question",
+      { text: question.text.substring(0, 50), subject, difficulty }
     );
 
   } catch (err) {
@@ -172,6 +182,15 @@ exports.bulkUploadQuestions = async (req, res) => {
       "Bulk Upload Success",
       `${inserted.length} questions have been successfully uploaded.`,
       "success"
+    );
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "BULK_UPLOAD_QUESTIONS",
+      null,
+      "Question",
+      { count: inserted.length }
     );
 
   } catch (err) {
@@ -369,6 +388,15 @@ exports.updateQuestion = async (req, res) => {
       "info"
     );
 
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "UPDATE_QUESTION",
+      id,
+      "Question",
+      { text: existing.text.substring(0, 50) }
+    );
+
   } catch (err) {
     console.error("UpdateQuestion Error:", err);
     res.status(500).json({ message: "Failed to update question" });
@@ -405,6 +433,15 @@ exports.deleteQuestion = async (req, res) => {
       "Question Deleted",
       `Question "${question.text.substring(0, 30)}..." has been deleted.`,
       "warning"
+    );
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "DELETE_QUESTION",
+      id,
+      "Question",
+      { text: question.text.substring(0, 50) }
     );
 
   } catch (err) {

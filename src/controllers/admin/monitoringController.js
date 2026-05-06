@@ -4,6 +4,7 @@ const ExamAttempt = require("../../models/ExamAttempt");
 const examService = require("../../services/examService");
 const { getIO } = require("../../config/socket");
 const notificationService = require("../../services/notificationService");
+const actionLogService = require("../../services/actionLogService");
 
 exports.getSuspiciousLogs = async (req, res) => {
   try {
@@ -140,6 +141,15 @@ exports.forceSubmit = async (req, res) => {
       "error"
     );
 
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "FORCE_TERMINATE_EXAM",
+      attemptId,
+      "ExamAttempt",
+      { userId: attempt.userId }
+    );
+
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -182,6 +192,15 @@ exports.forceSubmitBulk = async (req, res) => {
 
     res.json({ message: `Successfully force terminated ${successCount} attempts` });
 
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "BULK_FORCE_TERMINATE_EXAM",
+      null,
+      "ExamAttempt",
+      { count: successCount, attemptIds }
+    );
+
     // ✨ Bulk notify handled in loop above? 
     // Actually, I should add it to the loop.
   } catch (err) {
@@ -199,6 +218,15 @@ exports.dismissSuspiciousBulk = async (req, res) => {
     await SuspiciousLog.deleteMany({ _id: { $in: logIds } });
 
     res.json({ message: "Selected logs dismissed successfully" });
+
+    // 🔒 Log Action
+    await actionLogService.logAction(
+      req,
+      "DISMISS_SUSPICIOUS_LOGS",
+      null,
+      "SuspiciousLog",
+      { count: logIds.length, logIds }
+    );
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -11,6 +11,7 @@ const referralCtrl = require("../controllers/admin/referralController");
 const userCtrl = require("../controllers/admin/userController");
 const employeeCtrl = require("../controllers/admin/employeeController");
 const uploadCtrl = require("../controllers/admin/uploadController");
+const actionLogCtrl = require("../controllers/admin/actionLogController");
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -71,5 +72,8 @@ router.get("/employees", auth, role("admin"), employeeCtrl.getEmployees);
 router.post("/employees", auth, role("admin"), employeeCtrl.createEmployee);
 router.patch("/employees/:id", auth, role("admin"), employeeCtrl.updateEmployee);
 router.delete("/employees/:id", auth, role("admin"), employeeCtrl.deleteEmployee);
+
+// Activity Logs (Strictly Admin)
+router.get("/action-logs", auth, role("admin"), actionLogCtrl.getActionLogs);
 
 module.exports = router;

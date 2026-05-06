@@ -1,6 +1,7 @@
 const User = require("../../models/User");
 const bcrypt = require("bcryptjs");
 const notificationService = require("../../services/notificationService");
+const actionLogService = require("../../services/actionLogService");
 
 // @desc    Get all employees
 exports.getEmployees = async (req, res) => {
@@ -62,6 +63,15 @@ exports.createEmployee = async (req, res) => {
       `Employee ${name} has been added to the system.`,
       "success"
     );
+
+    // Log Action
+    await actionLogService.logAction(
+      req,
+      "CREATE_EMPLOYEE",
+      employee._id.toString(),
+      "User",
+      { name: employee.name, email: employee.email }
+    );
   } catch (error) {
     console.error("Error creating employee:", error);
     res.status(500).json({ message: "Server Error", error: error.message });
@@ -103,6 +113,15 @@ exports.updateEmployee = async (req, res) => {
       `Details for employee ${employee.name} have been updated.`,
       "info"
     );
+
+    // Log Action
+    await actionLogService.logAction(
+      req,
+      "UPDATE_EMPLOYEE",
+      id,
+      "User",
+      { name: employee.name, email: employee.email }
+    );
   } catch (error) {
     console.error("Error updating employee:", error);
     if (error.code === 11000) {
@@ -132,6 +151,15 @@ exports.deleteEmployee = async (req, res) => {
       "Employee Deleted",
       `Employee ${employee.name} has been removed from the system.`,
       "warning"
+    );
+
+    // Log Action
+    await actionLogService.logAction(
+      req,
+      "DELETE_EMPLOYEE",
+      id,
+      "User",
+      { name: employee.name, email: employee.email }
     );
   } catch (error) {
     console.error("Error deleting employee:", error);
