@@ -11,6 +11,7 @@ exports.getUsers = async (req, res) => {
     const search = req.query.search || "";
     const board = req.query.board;
     const className = req.query.class;
+    const referralCode = req.query.referralCode;
 
     const skip = (page - 1) * limit;
 
@@ -29,6 +30,9 @@ exports.getUsers = async (req, res) => {
     }
     if (className && className !== "All") {
       query["studentDetails.className"] = className;
+    }
+    if (referralCode && referralCode !== "All") {
+      query["usedReferralCode"] = referralCode;
     }
 
     const total = await User.countDocuments(query);

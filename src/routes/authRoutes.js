@@ -8,8 +8,12 @@ const {
   sendOtp,
   verifyOtp,
   verifyReferral,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/authController");
+const settingCtrl = require("../controllers/admin/settingController");
 
+router.get("/settings", settingCtrl.getPublicSettings);
 router.post(
   "/register",
   verifyCaptcha({ minScore: 0.5, expectedAction: "register" }),
@@ -24,5 +28,7 @@ router.post(
   login
 );
 router.post("/logout", auth, logout);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 module.exports = router;

@@ -40,14 +40,18 @@ exports.verifyOtp = async (req, res) => {
 // ================= VERIFY REFERRAL =================
 exports.verifyReferral = async (req, res) => {
   try {
-    const { code, schoolName } = req.body;
+    const { code } = req.body;
     if (!code) return res.status(400).json({ message: "Referral code is required" });
 
-    const referral = await Referral.findOne({ code: code.toUpperCase(), schoolName: schoolName.trim() });
-    if (!referral) return res.status(404).json({ message: "Invalid referral code or school name" });
+    const referral = await Referral.findOne({ code: code.toUpperCase() });
+    if (!referral) return res.status(404).json({ message: "Invalid referral code" });
     if (!referral.isActive) return res.status(400).json({ message: "Referral code is no longer active" });
 
-    res.status(200).json({ message: "Referral code is valid", schoolName: referral.schoolName });
+    res.status(200).json({ 
+      message: "Referral code is valid", 
+      schoolName: referral.schoolName,
+      referralMessage: referral.message 
+    });
   } catch (err) {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
@@ -158,7 +162,7 @@ exports.register = async (req, res) => {
 // ================= LOGIN =================
 exports.login = async (req, res) => {
   try {
-    let { email, password } = req.body;
+    let { email, password, rememberMe } = req.body;
 
     // 🛡️ Handle email sent as object
     if (email && typeof email === "object") {
@@ -200,8 +204,11 @@ exports.login = async (req, res) => {
       await redis.del(`session:${oldSessionId}`);
     }
 
+    const sessionDuration = rememberMe ? 60 * 60 * 24 * 7 : 60 * 60 * 24;
+    const jwtDuration = rememberMe ? "7d" : "1d";
+
     // 3️⃣ Save new session mapping (user → sessionId)
-    await redis.set(userSessionKey, sessionId, "EX", 60 * 60 * 24); // 24h
+    await redis.set(userSessionKey, sessionId, "EX", sessionDuration); 
 
     // 4️⃣ Save session data (sessionId → user info)
     await redis.set(
@@ -211,7 +218,7 @@ exports.login = async (req, res) => {
         role: user.role,
       }),
       "EX",
-      60 * 60 * 24
+      sessionDuration
     );
 
     // ==============================
@@ -225,7 +232,7 @@ exports.login = async (req, res) => {
         sessionId,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: jwtDuration }
     );
 
     // ==============================
@@ -260,6 +267,76 @@ exports.logout = async (req, res) => {
     res.status(200).json({
       message: "Logged out successfully",
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ================= FORGOT PASSWORD =================
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      // For security, don't reveal if user exists
+      return res.status(200).json({ message: "If an account with that email exists, we have sent a reset link." });
+    }
+
+    // Generate token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    // Save to user
+    user.resetPasswordToken = resetPasswordToken;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
+
+    // Simulated Reset URL
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
+
+    console.log(`\n================================`);
+    console.log(`[SIMULATED] Password Reset for ${email}`);
+    console.log(`RESET URL: >>> ${resetUrl} <<<`);
+    console.log(`================================\n`);
+
+    res.status(200).json({ message: "If an account with that email exists, we have sent a reset link." });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ================= RESET PASSWORD =================
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ message: "Missing required fields" });
+
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired reset token" });
+    }
+
+    // Hash and save new password
+    user.password = await bcrypt.hash(password, 10);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.status(200).json({ message: "Password reset successful. You can now log in." });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

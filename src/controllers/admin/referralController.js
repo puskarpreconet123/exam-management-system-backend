@@ -3,7 +3,7 @@ const notificationService = require("../../services/notificationService");
 
 exports.createReferral = async (req, res) => {
   try {
-    const { code, schoolName, paymentType } = req.body;
+    const { code, schoolName, paymentType, message } = req.body;
     
     if (!code || !schoolName || !paymentType) {
       return res.status(400).json({ message: "Referral code, school name, and payment type are required" });
@@ -20,6 +20,7 @@ exports.createReferral = async (req, res) => {
       code: code.toUpperCase(),
       schoolName: schoolName.trim(),
       paymentType,
+      message: message?.trim(),
       createdBy: req.user.id, // Auth middleware typically sets req.user.id
       isActive: true
     });
@@ -72,6 +73,30 @@ exports.toggleReferralStatus = async (req, res) => {
     });
   } catch (error) {
     console.error("Error toggling referral status:", error);
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
+exports.deleteReferral = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const referral = await Referral.findByIdAndDelete(id);
+
+    if (!referral) {
+      return res.status(404).json({ message: "Referral not found" });
+    }
+
+    res.status(200).json({ message: "Referral code deleted successfully" });
+
+    // ✨ Notify Admin
+    await notificationService.notifyUser(
+      req.user.id,
+      "Referral Deleted",
+      `Referral code "${referral.code}" for ${referral.schoolName} has been deleted.`,
+      "warning"
+    );
+  } catch (error) {
+    console.error("Error deleting referral:", error);
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 };

@@ -27,6 +27,10 @@ const referralSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true
+    },
+    message: {
+      type: String,
+      trim: true
     }
   },
   { timestamps: true }

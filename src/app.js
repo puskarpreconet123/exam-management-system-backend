@@ -7,6 +7,7 @@ const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const examRoutes = require("./routes/examRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 
 const app = express();
 
@@ -23,8 +24,13 @@ app.use(cors({
   credentials: true
 }));
 
-// Body parser with limit
-app.use(express.json({ limit: "1mb" }));
+// Body parser with limit and raw body capture for webhooks
+app.use(express.json({ 
+  limit: "1mb",
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 // Health Check
 app.get("/", (req, res) => {
@@ -36,6 +42,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/exam", examRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/payment", paymentRoutes);
 
 
 // 404 Handler

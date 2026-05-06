@@ -12,11 +12,16 @@ const userCtrl = require("../controllers/admin/userController");
 const employeeCtrl = require("../controllers/admin/employeeController");
 const uploadCtrl = require("../controllers/admin/uploadController");
 const actionLogCtrl = require("../controllers/admin/actionLogController");
+const settingCtrl = require("../controllers/admin/settingController");
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
 });
+
+// Settings (Strictly Admin)
+router.get("/settings", auth, role("admin"), settingCtrl.getSettings);
+router.patch("/settings", auth, role("admin"), settingCtrl.updateSettings);
 
 // Image Upload (Admins only for now or based on need)
 router.post("/upload", auth, role("admin"), upload.single("image"), uploadCtrl.uploadImage);
@@ -61,6 +66,7 @@ router.get("/totalUser", auth, permission("dashboard"), examCtrl.getTotalUserNo)
 router.post("/referrals", auth, permission("referrals"), referralCtrl.createReferral);
 router.get("/referrals", auth, permission("referrals"), referralCtrl.getReferrals);
 router.patch("/referrals/:id/toggle", auth, permission("referrals"), referralCtrl.toggleReferralStatus);
+router.delete("/referrals/:id", auth, permission("referrals"), referralCtrl.deleteReferral);
 
 // User Management (Students)
 router.get("/users", auth, permission("students"), userCtrl.getUsers);
