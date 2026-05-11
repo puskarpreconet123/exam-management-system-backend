@@ -47,7 +47,7 @@ exports.updateSettings = async (req, res) => {
 exports.getPublicSettings = async (req, res) => {
   try {
     // Only return settings that are safe for public (students)
-    const keys = ["registrationAmount", "razorpayKeyId"];
+    const keys = ["registrationAmount", "razorpayKeyId", "availableClasses"];
     const settings = await SystemSetting.find({ key: { $in: keys } });
     
     const settingsMap = {};
@@ -55,12 +55,15 @@ exports.getPublicSettings = async (req, res) => {
       settingsMap[s.key] = s.value;
     });
 
-    // Fallback to env if not in DB
+    // Fallback to defaults if not in DB
     if (settingsMap.registrationAmount === undefined) {
         settingsMap.registrationAmount = process.env.DEFAULT_REGISTRATION_AMOUNT || 0;
     }
     if (settingsMap.razorpayKeyId === undefined) {
         settingsMap.razorpayKeyId = process.env.RAZORPAY_KEY_ID;
+    }
+    if (settingsMap.availableClasses === undefined) {
+        settingsMap.availableClasses = ["General", "Class 5", "Class 2", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"];
     }
 
     res.status(200).json(settingsMap);

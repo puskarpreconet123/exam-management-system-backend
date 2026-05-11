@@ -3,6 +3,27 @@ const Question = require("../../models/Question");
 const { redis } = require("../../config/redis");
 const notificationService = require("../../services/notificationService");
 const actionLogService = require("../../services/actionLogService");
+const SystemSetting = require("../../models/SystemSetting");
+
+const syncClass = async (className) => {
+  if (!className || className === "General") return;
+  try {
+    const setting = await SystemSetting.findOne({ key: "availableClasses" });
+    let classes = setting ? setting.value : ["General", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"];
+    
+    // Normalize: trim and ensure case consistency if needed, but here we just check existence
+    if (!classes.includes(className)) {
+      classes.push(className);
+      await SystemSetting.findOneAndUpdate(
+        { key: "availableClasses" },
+        { value: classes, description: "List of available classes for students and questions" },
+        { upsert: true }
+      );
+    }
+  } catch (err) {
+    console.error("syncClass Error:", err);
+  }
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -71,6 +92,9 @@ exports.createQuestion = async (req, res) => {
 
     // 🔥 Update Redis pool immediately
     await redis.sadd(`questions:${board.trim()}:${className.trim()}:${subject.trim()}:${difficulty}`, question._id.toString());
+
+    // 🔄 Sync Class to global settings
+    await syncClass(className.trim());
 
     res.status(201).json({
       message: "Question created successfully",
@@ -169,6 +193,12 @@ exports.bulkUploadQuestions = async (req, res) => {
       if (grouped[key].length > 0) {
         await redis.sadd(`questions:${key}`, ...grouped[key]);
       }
+    }
+
+    // 🔄 Sync Classes to global settings
+    const uniqueClasses = [...new Set(inserted.map(q => q.class))];
+    for (const c of uniqueClasses) {
+      await syncClass(c);
     }
 
     res.json({
@@ -374,6 +404,9 @@ exports.updateQuestion = async (req, res) => {
       await redis.srem(oldKey, existing._id.toString());
       await redis.sadd(newKey, existing._id.toString());
     }
+
+    // 🔄 Sync Class to global settings
+    await syncClass(newClass);
 
     res.json({
       message: "Question updated successfully",
