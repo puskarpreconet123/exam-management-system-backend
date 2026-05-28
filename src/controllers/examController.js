@@ -282,12 +282,17 @@ exports.getDetailedResult = async (req, res) => {
 
     const questions = await Question.find({ _id: { $in: responseDoc.questionIds } }).lean();
 
-    const answersMap = {};
-    const overrideMap = {};
+    const answersMap = Object.create(null);
+    const overrideMap = Object.create(null);
     for (let ans of responseDoc.answers) {
-      answersMap[ans.questionId.toString()] = ans.selectedOption;
-      if (ans.isCorrectOverride !== null && ans.isCorrectOverride !== undefined) {
-        overrideMap[ans.questionId.toString()] = ans.isCorrectOverride;
+      if (ans.questionId) {
+        const key = ans.questionId.toString();
+        if (key !== '__proto__' && key !== 'constructor' && key !== 'prototype') {
+          answersMap[key] = ans.selectedOption;
+          if (ans.isCorrectOverride !== null && ans.isCorrectOverride !== undefined) {
+            overrideMap[key] = ans.isCorrectOverride;
+          }
+        }
       }
     }
 
