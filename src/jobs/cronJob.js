@@ -1,11 +1,13 @@
 const cron = require("node-cron");
 const ExamAttempt = require("../models/ExamAttempt");
 const examService = require("../services/examService");
+const { updateAllExamsStatus } = require("../utils/examStatusUpdater");
 
 exports.startFallbackCron = () => {
   cron.schedule("*/2 * * * *", async () => {
     try {
       const now = new Date();
+      await updateAllExamsStatus(now);
 
       const expiredAttempts = await ExamAttempt.find({
         status: "active",

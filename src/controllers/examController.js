@@ -6,6 +6,7 @@ const ExamResponse = require("../models/ExamResponse");
 const Question = require("../models/Question");
 const suspiciousService = require("../services/sucpiciousService");
 const notificationService = require("../services/notificationService");
+const { updateAllExamsStatus } = require("../utils/examStatusUpdater");
 
 exports.startExam = async (req, res) => {
   try {
@@ -108,6 +109,7 @@ exports.getAllExams = async (req, res) => {
     const { status } = req.query;
 
     const now = new Date();
+    await updateAllExamsStatus(now);
     let filter = {};
 
     if (status === "upcoming") {
@@ -145,6 +147,7 @@ exports.getExamsByUserId = async (req, res) => {
   try {
     const userId = req.user.id;
     const now = new Date();
+    await updateAllExamsStatus(now);
 
     const user = await User.findById(userId).select("createdAt studentDetails").lean();
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -180,11 +183,20 @@ exports.getExamsByUserId = async (req, res) => {
       if (attempt) {
         // 🔹 Attempt exists
         if (attempt.status === "active") {
-          liveSession.push({
-            ...exam,
-            attemptId: attempt._id,
-            expiresAt: attempt.expiresAt,
-          });
+          if (now > new Date(attempt.expiresAt)) {
+            submitted.push({
+              ...exam,
+              score: attempt.isPublished ? attempt.score : null,
+              submittedAt: attempt.expiresAt,
+              isPublished: attempt.isPublished
+            });
+          } else {
+            liveSession.push({
+              ...exam,
+              attemptId: attempt._id,
+              expiresAt: attempt.expiresAt,
+            });
+          }
         } else if (attempt.status === "submitted" || attempt.status === "timeout") {
           submitted.push({
             ...exam,

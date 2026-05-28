@@ -112,6 +112,7 @@ exports.createExam = async (req, res) => {
       endTime: parsedEnd,
       board: board.trim(),
       class: className.trim(),
+      status: "scheduled",
     });
 
     res.status(201).json({
@@ -177,11 +178,23 @@ exports.getExams = async (req, res) => {
 
     // Calculate basic stats for the dashboard
     const liveCount = await Exam.countDocuments({
-        startTime: { $lte: now },
-        $or: [
-            { endTime: { $exists: false } }, // fixed type might not have endTime in model sometimes
-            { endTime: { $gte: now } }
-        ]
+      $or: [
+        {
+          schedulingType: "range",
+          startTime: { $lte: now },
+          endTime: { $gte: now }
+        },
+        {
+          schedulingType: { $ne: "range" }, // fixed
+          startTime: { $lte: now },
+          $expr: {
+            $gte: [
+              { $add: ["$startTime", { $multiply: ["$duration", 60 * 1000] }] },
+              now
+            ]
+          }
+        }
+      ]
     });
 
     const upcomingCount = await Exam.countDocuments({
