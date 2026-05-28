@@ -40,6 +40,9 @@ exports.createOrder = async (req, res) => {
       amount: amount, // amount in the smallest currency unit
       currency: currency,
       receipt: `receipt_${Date.now()}`,
+      notes: {
+        userId: req.user?.id || ""
+      }
     };
 
     const order = await razorpay.orders.create(options);
@@ -94,6 +97,11 @@ exports.handleWebhook = async (req, res) => {
       return res.status(400).send("Webhook secret not configured");
     }
 
+    if (!req.rawBody) {
+      console.error("Raw body not captured");
+      return res.status(400).send("Raw body not captured");
+    }
+
     const isValid = Razorpay.validateWebhookSignature(
       req.rawBody.toString(),
       signature,
@@ -112,15 +120,42 @@ exports.handleWebhook = async (req, res) => {
 
     // Handle specific events
     switch (event) {
-      case "payment.captured":
-        // Logic for payment captured
+      case "payment.captured": {
+        const paymentEntity = payload.payment?.entity;
+        const userId = paymentEntity?.notes?.userId || paymentEntity?.notes?.user_id;
+        const transactionId = paymentEntity?.id;
+        if (userId) {
+          await User.findByIdAndUpdate(userId, {
+            paymentStatus: "completed",
+            transactionId: transactionId,
+          });
+          console.log(`Updated user ${userId} payment status to completed via payment.captured webhook`);
+        }
         break;
-      case "payment.failed":
-        // Logic for payment failed
+      }
+      case "order.paid": {
+        const orderEntity = payload.order?.entity;
+        const paymentEntity = payload.payment?.entity;
+        const userId = orderEntity?.notes?.userId || orderEntity?.notes?.user_id || paymentEntity?.notes?.userId;
+        const transactionId = paymentEntity?.id || orderEntity?.id;
+        if (userId) {
+          await User.findByIdAndUpdate(userId, {
+            paymentStatus: "completed",
+            transactionId: transactionId,
+          });
+          console.log(`Updated user ${userId} payment status to completed via order.paid webhook`);
+        }
         break;
-      case "order.paid":
-        // Logic for order paid
+      }
+      case "payment.failed": {
+        const paymentEntity = payload.payment?.entity;
+        const userId = paymentEntity?.notes?.userId || paymentEntity?.notes?.user_id;
+        const errorCode = paymentEntity?.error_code;
+        const errorDesc = paymentEntity?.error_description;
+        
+        console.warn(`Payment failed for user ${userId || "unknown"}. Error: ${errorCode} - ${errorDesc}`);
         break;
+      }
       default:
         // Other events
         break;
